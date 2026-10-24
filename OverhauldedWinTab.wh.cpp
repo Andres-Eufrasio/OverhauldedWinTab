@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.4.1
+// @version         0.5.0
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -36,7 +36,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
-- Optional carousel desktop strip that rotates as you switch desktops
+- Optional playing-card carousel desktop strip that rotates as you switch desktops
 - Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
@@ -115,7 +115,7 @@ movement keys.
 | Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
-| Desktop strip | Flat row, or a rotating carousel that follows the active desktop |
+| Desktop strip | Flat row, or a rotating playing-card carousel that follows the active desktop |
 | Desktop strip background | Panel behind the pills: Auto (flat only), Always show, or Always hide |
 | Animation speed | Relative speed of the open and close animations |
 | Close when focus is lost | Dismiss the overview when it loses activation |
@@ -165,14 +165,15 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 
 - **Flat row** (default) – every desktop pill in a single row, with the create
   button after them and the strip panel behind them
-- **Carousel** – the active desktop sits in the centre, its neighbours curve and
-  tilt away, and the wheel turns as you switch. The pills are larger than in the
-  flat row and float directly over the desktop: the panel is hidden by default,
-  so the wheel has no box around it. Selecting a desktop with `Tab`, `h` / `l`
-  or the arrows spins the strip to it; clicking a side pill jumps straight
-  there.
+- **Carousel** – the active desktop sits in the centre as a playing card, its
+  neighbours curve and tilt away, and the wheel turns as you switch. Each desktop
+  is numbered like a card (1, 2, 3…) and gets its own suit: spades, hearts,
+  diamonds, clubs, then back to spades. The cards float directly over the
+  desktop: the panel is hidden by default, so the wheel has no box around it.
+  Selecting a desktop with `Tab`, `h` / `l` or the arrows spins the strip to it;
+  clicking a side card jumps straight there.
 
-**Desktop strip background** controls the panel behind the pills: **Auto**
+**Desktop strip background** controls the panel behind the strip: **Auto**
 (default) keeps it for the flat row and hides it for the carousel, **Always
 show** brings it back in carousel mode, and **Always hide** makes the flat row
 float as well.
@@ -620,6 +621,8 @@ static IDWriteTextFormat* g_fmtCard = nullptr;
 static IDWriteTextFormat* g_fmtSearch = nullptr;
 static IDWriteTextFormat* g_fmtPill = nullptr;
 static IDWriteTextFormat* g_fmtPillLarge = nullptr;
+static IDWriteTextFormat* g_fmtCardSuit = nullptr;
+static IDWriteTextFormat* g_fmtCardSuitBig = nullptr;
 static IDWriteTextFormat* g_fmtHint = nullptr;
 static IDWriteTextFormat* g_fmtEmpty = nullptr;
 static IDWriteInlineObject* g_ellipsis = nullptr;
@@ -969,6 +972,8 @@ static void ReleaseTextFormats()
     release(g_fmtSearch);
     release(g_fmtPill);
     release(g_fmtPillLarge);
+    release(g_fmtCardSuit);
+    release(g_fmtCardSuitBig);
     release(g_fmtHint);
     release(g_fmtEmpty);
     if (g_ellipsis) { g_ellipsis->Release(); g_ellipsis = nullptr; }
@@ -1060,6 +1065,16 @@ static void EnsureTextFormats()
     create(g_dwrite, DWRITE_FONT_WEIGHT_NORMAL, 15.0f * g_scale, &g_fmtSearch);
     create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 13.0f * g_scale, &g_fmtPill);
     create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 15.0f * g_scale, &g_fmtPillLarge);
+
+    auto createSymbol = [](IDWriteFactory* factory, float size,
+                           IDWriteTextFormat** out) {
+        return factory->CreateTextFormat(L"Segoe UI Symbol", nullptr,
+                                         DWRITE_FONT_WEIGHT_NORMAL,
+                                         DWRITE_FONT_STYLE_NORMAL,
+                                         DWRITE_FONT_STRETCH_NORMAL, size, L"", out);
+    };
+    createSymbol(g_dwrite, 15.0f * g_scale, &g_fmtCardSuit);
+    createSymbol(g_dwrite, 44.0f * g_scale, &g_fmtCardSuitBig);
     create(g_dwrite, DWRITE_FONT_WEIGHT_NORMAL, 12.0f * g_scale, &g_fmtHint);
     create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 17.0f * g_scale, &g_fmtEmpty);
 
@@ -1087,10 +1102,16 @@ static void EnsureTextFormats()
             g_fmtPillLarge->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
             g_fmtPillLarge->SetTrimming(&trimming, g_ellipsis);
         }
+        if (g_fmtHint)
+        {
+            g_fmtHint->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+            g_fmtHint->SetTrimming(&trimming, g_ellipsis);
+        }
     }
 
-    IDWriteTextFormat* formats[] = {g_fmtTitle, g_fmtCard, g_fmtSearch,
-                                    g_fmtPill, g_fmtPillLarge, g_fmtHint, g_fmtEmpty};
+    IDWriteTextFormat* formats[] = {g_fmtTitle,    g_fmtCard,      g_fmtSearch,
+                                    g_fmtPill,     g_fmtPillLarge, g_fmtHint,
+                                    g_fmtEmpty,    g_fmtCardSuit,  g_fmtCardSuitBig};
     for (IDWriteTextFormat* format : formats)
     {
         if (format)
@@ -2072,12 +2093,11 @@ static void RebuildPills()
 {
     g_pills.clear();
     const float s = g_scale;
-    const float pillH = (g_stripStyle == StripStyle::Carousel ? 52.0f : 42.0f) * s;
+    const float pillH = (g_stripStyle == StripStyle::Carousel ? 224.0f : 42.0f) * s;
     const float gap = 10.0f * s;
     const float createW = 42.0f * s;
 
     float nameWidths[64] = {};
-    float maxWidth = 0.0f;
     const int count = std::min<int>(static_cast<int>(g_desktops.size()),
                                     ARRAYSIZE(nameWidths));
     for (int i = 0; i < count; i++)
@@ -2095,7 +2115,6 @@ static void RebuildPills()
         const float maxW = renaming ? 460.0f * s : 320.0f * s;
         w = std::max(112.0f * s, std::min(maxW, w));
         nameWidths[i] = w;
-        maxWidth = std::max(maxWidth, w);
     }
 
     if (count <= 0)
@@ -2106,23 +2125,19 @@ static void RebuildPills()
 
     if (g_stripStyle == StripStyle::Carousel)
     {
-        // A single width for every pill keeps the wheel symmetric; long names
-        // are ellipsized by the pill text format. The rename editor gets more
-        // room because it is always centred while editing.
-        const bool renaming = g_renameDesktop >= 0;
-        const float pillW = renaming
-            ? 380.0f * s
-            : std::max(160.0f * s, std::min(320.0f * s, maxWidth));
-        const float pitch = pillW + 16.0f * s;
+        // Every desktop is a portrait playing card, so the wheel needs one
+        // fixed card size instead of widths driven by the desktop name.
+        const float pillW = 160.0f * s;
+        const float pitch = pillW + 20.0f * s;
         const float cx = g_layout.strip.l + g_layout.strip.W() / 2.0f;
         const float cy = g_layout.strip.t + g_layout.strip.H() / 2.0f;
 
-        // Keep the farthest visible pill clear of the create button; narrow
+        // Keep the farthest visible card clear of the create button; narrow
         // monitors show fewer neighbours instead of shrinking the wheel.
         const float rightLimit = g_layout.strip.r - createW - 24.0f * s;
         const float maxOffset = std::max(0.0f, rightLimit - cx);
         const float visibleDepth =
-            std::max(0.5f, std::min(2.25f, maxOffset / (pitch * 0.82f) - 0.15f));
+            std::max(0.5f, std::min(2.25f, maxOffset / (pitch * 0.82f) - 0.6f));
 
         for (int i = 0; i < count; i++)
         {
@@ -2149,10 +2164,10 @@ static void RebuildPills()
 
                 if (pill.hasClose)
                 {
-                    pill.closeRect = {pill.rect.r - 28.0f * s,
-                                      pill.rect.t + 6.0f * s,
-                                      pill.rect.r - 6.0f * s,
-                                      pill.rect.b - 6.0f * s};
+                    pill.closeRect = {pill.rect.r - 32.0f * s,
+                                      pill.rect.t + 8.0f * s,
+                                      pill.rect.r - 8.0f * s,
+                                      pill.rect.t + 32.0f * s};
                     pill.closeHit = TransformedBounds(pill.closeRect, pill.scale,
                                                       pill.angle);
                 }
@@ -2160,9 +2175,10 @@ static void RebuildPills()
             g_pills.push_back(pill);
         }
 
+        const float createH = 42.0f * s;
         g_createRect = {g_layout.strip.r - createW - 12.0f * s,
-                        cy - pillH / 2.0f, g_layout.strip.r - 12.0f * s,
-                        cy + pillH / 2.0f};
+                        cy - createH / 2.0f, g_layout.strip.r - 12.0f * s,
+                        cy + createH / 2.0f};
         return;
     }
 
@@ -2253,7 +2269,7 @@ static void UpdateLayout()
         g_searchClearRect = {};
     }
 
-    const float stripH = (g_stripStyle == StripStyle::Carousel ? 96.0f : 64.0f) * s;
+    const float stripH = (g_stripStyle == StripStyle::Carousel ? 264.0f : 64.0f) * s;
     const float stripBottom = g_layout.h - 46.0f * s;
     g_layout.strip = {margin, stripBottom - stripH, g_layout.w - margin, stripBottom};
     g_layout.grid = {margin, g_layout.search.b + 42.0f * s, g_layout.w - margin,
@@ -2438,6 +2454,126 @@ static void DrawTextBlock(const std::wstring& text, IDWriteTextFormat* format,
     g_d2dTarget->DrawTextW(text.c_str(), static_cast<UINT32>(text.size()), format,
                            D2D1::RectF(rect.l, rect.t, rect.r, rect.b), g_d2dBrush,
                            D2D1_DRAW_TEXT_OPTIONS_CLIP);
+}
+
+static void DrawRotatedTextBlock(const std::wstring& text, IDWriteTextFormat* format,
+                                 const RectF& rect, UINT32 color,
+                                 DWRITE_TEXT_ALIGNMENT align, float multiply,
+                                 float degrees)
+{
+    if (!g_d2dTarget)
+        return;
+    D2D1::Matrix3x2F saved;
+    g_d2dTarget->GetTransform(&saved);
+    const D2D1_POINT_2F centre =
+        D2D1::Point2F((rect.l + rect.r) / 2.0f, (rect.t + rect.b) / 2.0f);
+    g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Rotation(degrees, centre) * saved);
+    DrawTextBlock(text, format, rect, color, align, multiply);
+    g_d2dTarget->SetTransform(saved);
+}
+
+// A desktop rendered as a playing card: rank in the corners, suit pip, and the
+// desktop name where a court card would put its label.
+static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
+                            bool selected, bool closeHovered)
+{
+    const float s = g_scale;
+    const float alpha = pill.alpha;
+    const RectF face = pill.rect;
+    const float radius = 12.0f * s;
+
+    const UINT32 faceColor = 0xFFF8F5EC;
+    const UINT32 ink = 0xFF1C1B20;
+    const UINT32 red = 0xFFC62828;
+    const int suit = pill.desktop & 3;
+    const UINT32 suitColor = (suit == 1 || suit == 2) ? red : ink;
+    const WCHAR* glyph = suit == 0 ? L"\u2660"
+                        : suit == 1 ? L"\u2665"
+                        : suit == 2 ? L"\u2666"
+                                    : L"\u2663";
+
+    if (!StripBackgroundVisible())
+    {
+        const RectF shadow = {face.l, face.t + 8.0f * s, face.r,
+                              face.b + 14.0f * s};
+        FillRound(shadow, radius + 2.0f * s, 0xFF000000, 0.32f * alpha);
+    }
+
+    FillRound(face, radius,
+              hovered ? MixColor(faceColor, 0xFFE4DCC8, 0.55f) : faceColor,
+              alpha);
+    if (selected || active)
+        StrokeRound(face, radius, g_theme.accent, (selected ? 2.6f : 2.0f) * s,
+                    0.95f * alpha);
+    else
+        StrokeRound(face, radius, ink, 1.0f * s, 0.30f * alpha);
+    const RectF inner = {face.l + 5.0f * s, face.t + 5.0f * s,
+                         face.r - 5.0f * s, face.b - 5.0f * s};
+    StrokeRound(inner, std::max(2.0f * s, radius - 4.0f * s), ink, 1.0f * s,
+                0.12f * alpha);
+
+    const float pad = 9.0f * s;
+    const float idxW = 34.0f * s;
+    const std::wstring rank = std::to_wstring(pill.desktop + 1);
+    const RectF rankRect = {face.l + pad, face.t + 5.0f * s,
+                            face.l + pad + idxW, face.t + 27.0f * s};
+    const RectF suitRect = {face.l + pad, face.t + 24.0f * s,
+                            face.l + pad + idxW, face.t + 44.0f * s};
+    IDWriteTextFormat* suitFmt = g_fmtCardSuit ? g_fmtCardSuit : g_fmtPillLarge;
+    DrawTextBlock(rank, g_fmtPillLarge, rankRect, suitColor,
+                  DWRITE_TEXT_ALIGNMENT_CENTER, alpha);
+    DrawTextBlock(glyph, suitFmt, suitRect, suitColor,
+                  DWRITE_TEXT_ALIGNMENT_CENTER, alpha);
+
+    const RectF bRankRect = {face.r - pad - idxW, face.b - 27.0f * s,
+                             face.r - pad, face.b - 5.0f * s};
+    const RectF bSuitRect = {face.r - pad - idxW, face.b - 44.0f * s,
+                             face.r - pad, face.b - 24.0f * s};
+    DrawRotatedTextBlock(rank, g_fmtPillLarge, bRankRect, suitColor,
+                         DWRITE_TEXT_ALIGNMENT_CENTER, alpha, 180.0f);
+    DrawRotatedTextBlock(glyph, suitFmt, bSuitRect, suitColor,
+                         DWRITE_TEXT_ALIGNMENT_CENTER, alpha, 180.0f);
+
+    const float h = face.H();
+    const RectF bigSuit = {face.l + 18.0f * s, face.t + h * 0.27f,
+                           face.r - 18.0f * s, face.t + h * 0.63f};
+    DrawTextBlock(glyph, g_fmtCardSuitBig ? g_fmtCardSuitBig : suitFmt, bigSuit,
+                  suitColor, DWRITE_TEXT_ALIGNMENT_CENTER, 0.14f * alpha);
+
+    const bool renaming = g_renameDesktop == pill.desktop;
+    const std::wstring& name =
+        renaming ? g_renameText : g_desktops[pill.desktop].name;
+    const RectF nameRect = {face.l + 8.0f * s, face.t + h * 0.64f,
+                            face.r - 8.0f * s, face.t + h * 0.80f};
+    DrawTextBlock(name, g_fmtHint, nameRect, ink,
+                  DWRITE_TEXT_ALIGNMENT_CENTER, 0.78f * alpha);
+
+    if (renaming && ((GetTickCount64() / 530) % 2) == 0)
+    {
+        const float textW = MeasureTextWidth(g_renameText, g_fmtHint);
+        const float startX = nameRect.l + (nameRect.W() - textW) / 2.0f;
+        const float caretX = std::min(nameRect.r, startX + textW + 1.0f * s);
+        g_d2dBrush->SetColor(ColorOf(ink, 0.85f * alpha));
+        g_d2dTarget->DrawLine(
+            D2D1::Point2F(caretX, nameRect.t + 2.0f * s),
+            D2D1::Point2F(caretX, nameRect.b - 2.0f * s), g_d2dBrush,
+            1.4f * s);
+    }
+
+    if (pill.hasClose && !renaming)
+    {
+        g_d2dBrush->SetColor(
+            ColorOf(ink, (closeHovered ? 0.95f : 0.45f) * alpha));
+        const float ccx = pill.closeRect.l + pill.closeRect.W() / 2.0f;
+        const float ccy = pill.closeRect.t + pill.closeRect.H() / 2.0f;
+        const float arm = 4.4f * s;
+        g_d2dTarget->DrawLine(D2D1::Point2F(ccx - arm, ccy - arm),
+                              D2D1::Point2F(ccx + arm, ccy + arm), g_d2dBrush,
+                              1.4f * s);
+        g_d2dTarget->DrawLine(D2D1::Point2F(ccx + arm, ccy - arm),
+                              D2D1::Point2F(ccx - arm, ccy + arm), g_d2dBrush,
+                              1.4f * s);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2754,6 +2890,10 @@ static void RenderScene(HDC dc)
             g_d2dTarget->SetTransform(
                 D2D1::Matrix3x2F::Scale(pill.scale, pill.scale, centre) *
                 D2D1::Matrix3x2F::Rotation(pill.angle, centre));
+            DrawDesktopCard(pill, active, hovered, selected,
+                            g_hoverPillClose == i);
+            g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
+            continue;
         }
 
         UINT32 fill = active ? g_theme.pillActive : g_theme.pillFill;

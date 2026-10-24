@@ -22,6 +22,12 @@ Guiding rules:
 - `Appearance.StripBackground` (`auto` / `show` / `hide`) - the carousel floats
   by default with larger pills and no panel (v0.4.1).
 
+## Implemented on `experimental-card`
+
+- Playing-card carousel - every desktop is a numbered card with a cycling suit
+  (spades, hearts, diamonds, clubs), a corner rank and a large pip; the flat row
+  is unchanged (v0.5.0).
+
 ## Phase 1 - Visual customization pack
 
 Low risk, high payoff, and mostly confined to `UpdateLayout`, `ResolveTheme` and

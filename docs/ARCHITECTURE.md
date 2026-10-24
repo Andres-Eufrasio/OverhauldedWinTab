@@ -226,20 +226,23 @@ which makes the next typed character replace the query. With
 `UpdateLayout` until it is focused or non-empty; `Appearance.ShowHints` hides only
 the hint line.
 
-`Appearance.DesktopStrip` selects the strip layout. In carousel mode
-`RebuildPills` gives every pill one width and places it by its wrapped distance
-`d` from `g_carouselPos`, with `scale = 1 - 0.18|d|`, a `4.5d` degree tilt, a
-small vertical arc and an alpha fade. Carousel pills are larger (52 px high,
-up to 320 px wide, 15 px label) and the strip is taller (96 px at 100%) so the
-rotated pills stay inside it. `Appearance.StripBackground` controls the panel:
-`Auto` keeps it in the flat row and hides it for the carousel,
-`StripBackgroundVisible()` resolves the three modes, and floating pills get a
-soft drop shadow. `kTimerCarousel` eases `g_carouselPos` towards `StripTarget()`
-(strip selection, pending desktop switch, or active desktop) by the shortest
-route around the wheel, and `KickCarousel()` restarts the timer when the target
-changes. Rendering sorts visible pills farthest-first and applies a
-scale/rotation transform about each pill centre; hit testing uses the transformed
-bounding box and prefers the pill closest to the centre.
+`Appearance.DesktopStrip` selects the strip layout. In carousel mode every
+desktop becomes a portrait playing card: `RebuildPills` uses a fixed 160 x 224
+card and places it by its wrapped distance `d` from `g_carouselPos`, with
+`scale = 1 - 0.18|d|`, a `4.5d` degree tilt, a small vertical arc and an alpha
+fade. The strip is taller (264 px at 100%) so the rotated cards stay inside it.
+`DrawDesktopCard` paints the ivory face, corner rank and suit (rotated 180
+degrees in the bottom corner), a large suit pip, and the desktop name; the suit
+is `desktop & 3`, so desktops cycle through spades, hearts, diamonds and clubs.
+`Appearance.StripBackground` controls the panel: `Auto` keeps it in the flat row
+and hides it for the carousel, `StripBackgroundVisible()` resolves the three
+modes, and floating cards get a soft drop shadow. `kTimerCarousel` eases
+`g_carouselPos` towards `StripTarget()` (strip selection, pending desktop
+switch, or active desktop) by the shortest route around the wheel, and
+`KickCarousel()` restarts the timer when the target changes. Rendering sorts
+visible cards farthest-first and applies a scale/rotation transform about each
+card centre; hit testing uses the transformed bounding box and prefers the card
+closest to the centre.
 
 `ShowOverlay` clears the transient state (query, page, selection, focus, rename,
 hover) *before* it calls `RebuildWindowList`. That order matters: the rebuild

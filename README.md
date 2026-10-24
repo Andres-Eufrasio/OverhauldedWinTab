@@ -21,7 +21,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
-- Optional carousel desktop strip that rotates as you switch desktops
+- Optional playing-card carousel desktop strip that rotates as you switch desktops
 - Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
@@ -100,7 +100,7 @@ movement keys.
 | Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
-| Desktop strip | Flat row, or a rotating carousel that follows the active desktop |
+| Desktop strip | Flat row, or a rotating playing-card carousel that follows the active desktop |
 | Desktop strip background | Panel behind the pills: Auto (flat only), Always show, or Always hide |
 | Animation speed | Relative speed of the open and close animations |
 | Close when focus is lost | Dismiss the overview when it loses activation |
@@ -150,14 +150,15 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 
 - **Flat row** (default) – every desktop pill in a single row, with the create
   button after them and the strip panel behind them
-- **Carousel** – the active desktop sits in the centre, its neighbours curve and
-  tilt away, and the wheel turns as you switch. The pills are larger than in the
-  flat row and float directly over the desktop: the panel is hidden by default,
-  so the wheel has no box around it. Selecting a desktop with `Tab`, `h` / `l`
-  or the arrows spins the strip to it; clicking a side pill jumps straight
-  there.
+- **Carousel** – the active desktop sits in the centre as a playing card, its
+  neighbours curve and tilt away, and the wheel turns as you switch. Each desktop
+  is numbered like a card (1, 2, 3…) and gets its own suit: spades, hearts,
+  diamonds, clubs, then back to spades. The cards float directly over the
+  desktop: the panel is hidden by default, so the wheel has no box around it.
+  Selecting a desktop with `Tab`, `h` / `l` or the arrows spins the strip to it;
+  clicking a side card jumps straight there.
 
-**Desktop strip background** controls the panel behind the pills: **Auto**
+**Desktop strip background** controls the panel behind the strip: **Auto**
 (default) keeps it for the flat row and hides it for the carousel, **Always
 show** brings it back in carousel mode, and **Always hide** makes the flat row
 float as well.
