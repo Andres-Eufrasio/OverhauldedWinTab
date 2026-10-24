@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWin Tab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.2.2
+// @version         0.2.3
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -107,12 +107,13 @@ contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
 
 **Background** controls what sits behind the panel:
 
-- **Acrylic** – the live desktop blurred by Windows, with a translucent tint
-  drawn on top (default)
+- **Acrylic** – the Windows 11 acrylic material: a frosted, tinted blur of the
+  desktop, with the panel tint drawn on top (default)
 - **Mica** – the Windows 11 Mica material. Mica is a flat, wallpaper-tinted
   surface rather than a blur
 - **Mica Alt** – the Windows 11 Mica Alt material
-- **Blur** – the classic (non-acrylic) blur
+- **Blur** – alias of Acrylic; Windows 11 no longer ships a separate Aero-style
+  blur
 - **Solid** – an opaque panel; ignores the opacity setting
 - **Transparent** – no backdrop effect; the live desktop shows through
 
@@ -227,7 +228,7 @@ OverhauldedWin Tab is a pre-release project.
       $description: Accent color used for highlights, in #RRGGBB format. Used by the "Custom" theme.
     - Background: "acrylic"
       $name: Background
-      $description: Backdrop effect. Acrylic and Blur are live blurs; Mica is a flat, wallpaper-tinted surface.
+      $description: Backdrop effect. Acrylic (and Blur) use the Windows 11 acrylic material; Mica is a flat, wallpaper-tinted surface.
       $options:
       - "acrylic": Acrylic
       - "mica": Mica
@@ -2278,12 +2279,20 @@ static void TriggerWindowNCRendering(HWND hwnd)
 
 // Applies the configured backdrop effect.
 //
-// The OS is only asked for the blur/material, never for the tint: on Windows 11
-// an acrylic accent with a non-zero gradient alpha tends to replace the blur
-// with a flat fill, and ACCENT_FLAG_ENABLE_MODERN_ACRYLIC_RECIPE (flag 2)
-// renders flat and ignores the gradient color entirely. Passing gradient alpha
-// 0 keeps a clean blur, and the D2D scrim then supplies the tint for every mode
-// through a single, consistent (and linear) opacity control.
+// Everything goes through the DWM system backdrop (DWMWA_SYSTEMBACKDROP_TYPE):
+// on current Windows 11 builds that is the only path that renders a real
+// material. The legacy SetWindowCompositionAttribute acrylic / Aero blur are
+// broken there -- measured on Windows 11 build 26300, an acrylic accent renders
+// a flat fill or solid black (a 400x300 sample of the client area was either
+// uniform black or exactly the gradient color, never a blur), and
+// DwmEnableBlurBehindWindow does not change that. DWMSBT_TRANSIENTWINDOW (3) is
+// Windows 11's acrylic material and works, so Acrylic (and Blur, kept as an
+// alias) use it, Mica uses DWMSBT_MAINWINDOW (2) and Mica Alt uses
+// DWMSBT_TABBEDWINDOW (4). The accent policy is only a fallback for builds where
+// DWM rejects the system backdrop.
+//
+// The OS is only asked for the material, never for the tint: the Direct2D scrim
+// supplies the color and opacity for every mode through one linear control.
 static void ApplyBackdrop(HWND hwnd)
 {
     MARGINS margins = {-1, -1, -1, -1};
@@ -2309,29 +2318,34 @@ static void ApplyBackdrop(HWND hwnd)
     bool accentOk = false;
     HRESULT backdropHr = E_FAIL;
     bool blurOk = false;
+    DWORD sysType = 1 /* DWMSBT_NONE */;
 
     switch (g_backgroundMode)
     {
     case BackgroundMode::Acrylic:
-        // Blur only; flags stay 0 so the gradient color is not turned into a
-        // flat fill.
-        blurOk = EnableBlurBehind(hwnd);
-        accentOk = SetAccentPolicy(hwnd, 4 /* ACCENT_ENABLE_ACRYLICBLURBEHIND */, 0,
-                                   0x00000000);
-        break;
     case BackgroundMode::Blur:
-        // The older, smoother Aero-style blur (no acrylic noise layer).
-        blurOk = EnableBlurBehind(hwnd);
-        accentOk = SetAccentPolicy(hwnd, 3 /* ACCENT_ENABLE_BLURBEHIND */, 0, 0x00000000);
+    {
+        sysType = 3 /* DWMSBT_TRANSIENTWINDOW (Windows 11 acrylic) */;
+        backdropHr = DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &sysType,
+                                           sizeof(sysType));
+        if (FAILED(backdropHr) || !g_glass)
+        {
+            // Older builds: the classic blur-behind plus acrylic accent.
+            blurOk = EnableBlurBehind(hwnd);
+            accentOk = SetAccentPolicy(hwnd, 4 /* ACCENT_ENABLE_ACRYLICBLURBEHIND */, 0,
+                                       0x00000000);
+        }
+        TriggerWindowNCRendering(hwnd);
         break;
+    }
     case BackgroundMode::Mica:
     case BackgroundMode::MicaAlt:
     {
-        DWORD type = g_backgroundMode == BackgroundMode::Mica
-                         ? 2 /* DWMSBT_MAINWINDOW */
-                         : 4 /* DWMSBT_TABBEDWINDOW (Mica Alt) */;
-        backdropHr = DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &type,
-                                           sizeof(type));
+        sysType = g_backgroundMode == BackgroundMode::Mica
+                      ? 2 /* DWMSBT_MAINWINDOW */
+                      : 4 /* DWMSBT_TABBEDWINDOW (Mica Alt) */;
+        backdropHr = DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &sysType,
+                                           sizeof(sysType));
         TriggerWindowNCRendering(hwnd);
         break;
     }
@@ -2340,10 +2354,11 @@ static void ApplyBackdrop(HWND hwnd)
         break;
     }
 
-    Wh_Log(L"Backdrop applied: mode=%d opacity=%.2f color=0x%08X glass=%d scrim=%.2f "
-           L"blur=%d accent=%d backdropHr=0x%08lX",
-           static_cast<int>(g_backgroundMode), g_backgroundOpacity, g_theme.background,
-           g_glass ? 1 : 0, BackgroundScrimAlpha(), blurOk ? 1 : 0, accentOk ? 1 : 0,
+    Wh_Log(L"Backdrop applied: mode=%d sysType=%lu opacity=%.2f color=0x%08X glass=%d "
+           L"scrim=%.2f blur=%d accent=%d backdropHr=0x%08lX",
+           static_cast<int>(g_backgroundMode), static_cast<unsigned long>(sysType),
+           g_backgroundOpacity, g_theme.background, g_glass ? 1 : 0, BackgroundScrimAlpha(),
+           blurOk ? 1 : 0, accentOk ? 1 : 0,
            static_cast<unsigned long>(backdropHr));
 }
 

@@ -83,25 +83,29 @@ Window previews are real DWM thumbnails:
 
 The panel background is a translucent scrim over DWM glass
 (`DwmExtendFrameIntoClientArea` with `-1` margins). The scrim color and alpha are
-configurable, and the effect underneath is selectable:
+configurable, and the material underneath is selectable. Every material goes
+through the DWM system backdrop (`DWMWA_SYSTEMBACKDROP_TYPE`), followed by a
+`WM_NCACTIVATE` nudge so DWM paints it:
 
-- **Acrylic** – `SetWindowCompositionAttribute` with
-  `ACCENT_ENABLE_ACRYLICBLURBEHIND` (accent flags `0`)
-- **Blur** – `ACCENT_ENABLE_BLURBEHIND`
-- **Mica** / **Mica Alt** – `DWMWA_SYSTEMBACKDROP_TYPE` (`DWMSBT_MAINWINDOW` /
-  `DWMSBT_TABBEDWINDOW`) followed by a `WM_NCACTIVATE` nudge so DWM paints the
-  material; Mica is a flat, wallpaper-tinted surface, not a blur
+- **Acrylic** – `DWMSBT_TRANSIENTWINDOW` (Windows 11's acrylic material)
+- **Blur** – alias of Acrylic (see below)
+- **Mica** / **Mica Alt** – `DWMSBT_MAINWINDOW` / `DWMSBT_TABBEDWINDOW`; Mica
+  is a flat, wallpaper-tinted surface, not a blur
 - **Solid** / **Transparent** – no OS effect; the scrim alone is drawn
 
-The OS effect only supplies the blur/material; its own tint is left fully
-transparent (`gradientColor = 0` with accent flags `0`). This is deliberate:
-measured on Windows 11, an acrylic accent with a non-zero gradient alpha
-replaces the blur with a flat fill, and `ACCENT_FLAG_ENABLE_MODERN_ACRYLIC_RECIPE`
-(flag `2`) renders flat and ignores the gradient color altogether. With a zero
-alpha the blur stays clean, and the Direct2D scrim then supplies the color and
-opacity for every mode through one linear control. The scrim's alpha is verified
-to composite correctly over both the acrylic blur and the Mica material. If DWM
-glass is unavailable the scrim is forced nearly opaque as a fallback.
+`SetWindowCompositionAttribute` (`ACCENT_ENABLE_ACRYLICBLURBEHIND` /
+`ACCENT_ENABLE_BLURBEHIND`) is only kept as a fallback for builds where DWM
+rejects the system backdrop. Measured on Windows 11 build 26300 it is broken: an
+acrylic accent renders a flat fill or solid black (a 400x300 sample of the client
+area was either uniform black or exactly the gradient color, never a blur) and
+`DwmEnableBlurBehindWindow` does not change that. `DWMSBT_TRANSIENTWINDOW` does
+render a real material, which is why Acrylic and Blur both use it.
+
+The OS material is requested without a tint: DWM supplies the material and the
+Direct2D scrim then supplies the color and opacity for every mode through one
+linear control. The scrim's alpha is verified to composite correctly over both
+the acrylic material and Mica. If DWM glass is unavailable the scrim is forced
+nearly opaque as a fallback.
 
 ### Palettes
 
