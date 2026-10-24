@@ -85,15 +85,23 @@ The panel background is a translucent scrim over DWM glass
 (`DwmExtendFrameIntoClientArea` with `-1` margins). The scrim color and alpha are
 configurable, and the effect underneath is selectable:
 
-- **Acrylic** – `SetWindowCompositionAttribute` with `ACCENT_ENABLE_ACRYLICBLURBEHIND`
+- **Acrylic** – `SetWindowCompositionAttribute` with
+  `ACCENT_ENABLE_ACRYLICBLURBEHIND` (accent flags `0`)
 - **Blur** – `ACCENT_ENABLE_BLURBEHIND`
 - **Mica** / **Mica Alt** – `DWMWA_SYSTEMBACKDROP_TYPE` (`DWMSBT_MAINWINDOW` /
-  `DWMSBT_TABBEDWINDOW`) plus `DWMWA_MICA_EFFECT` for older builds
+  `DWMSBT_TABBEDWINDOW`) followed by a `WM_NCACTIVATE` nudge so DWM paints the
+  material; Mica is a flat, wallpaper-tinted surface, not a blur
 - **Solid** / **Transparent** – no OS effect; the scrim alone is drawn
 
-The OS effect only supplies the blur/material (its tint is left transparent) so
-that the D2D scrim provides one consistent color and opacity across every mode.
-If DWM glass is unavailable the scrim is forced nearly opaque as a fallback.
+The OS effect only supplies the blur/material; its own tint is left fully
+transparent (`gradientColor = 0` with accent flags `0`). This is deliberate:
+measured on Windows 11, an acrylic accent with a non-zero gradient alpha
+replaces the blur with a flat fill, and `ACCENT_FLAG_ENABLE_MODERN_ACRYLIC_RECIPE`
+(flag `2`) renders flat and ignores the gradient color altogether. With a zero
+alpha the blur stays clean, and the Direct2D scrim then supplies the color and
+opacity for every mode through one linear control. The scrim's alpha is verified
+to composite correctly over both the acrylic blur and the Mica material. If DWM
+glass is unavailable the scrim is forced nearly opaque as a fallback.
 
 ## 4. Window list
 
@@ -142,13 +150,21 @@ State is intentionally small:
 - `Tab` toggles focus between the grid and the desktop strip.
 - `UpdateLayout` computes both the scene geometry and the per-card / per-pill hit
   rectangles in physical pixels, so mouse hit testing and rendering always agree.
-- `g_renameDesktop` / `g_renameText` hold the inline desktop rename editor.
+- `g_renameDesktop` / `g_renameText` hold the inline desktop rename editor. The
+  pill width and the caret position are measured with DirectWrite
+  (`MeasureTextWidth`) instead of an estimated per-character advance, so long
+  names are not clipped and the caret sits where the text ends.
 
-Vim navigation (`h` `j` `k` `l`, `/`, `x`) only engages while the search field is
-empty and unfocused, so a search query that contains those letters still works
-once typing has started. Unmodified arrow keys keep their original meaning;
-`Ctrl` + `Left`/`Right` switches desktops and `Shift` + `Left`/`Right` moves the
-selected window to an adjacent desktop.
+The search field is never typed into until it has focus: click it, or press `/`.
+Until then `WM_CHAR` only routes the navigation keys (`h` `j` `k` `l` `x`), so a
+query that contains those letters can never collide with a command. While the
+field is focused, `OnKeyDown` handles only `Esc`, `Enter` and `Backspace` so that
+keys such as `Delete` or `N` cannot trigger an action mid-query.
+
+Vim navigation (`h` `j` `k` `l`, `/`, `x`) is gated on `Behavior.VimNavigation`.
+Unmodified arrow keys keep their original meaning; `Ctrl` + `Left`/`Right`
+switches desktops and `Shift` + `Left`/`Right` moves the selected window to an
+adjacent desktop.
 
 Activating a window hides the overlay immediately (no reverse animation) and
 then restores and foregrounds the target. Closing a window posts `WM_CLOSE`,

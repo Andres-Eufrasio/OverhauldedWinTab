@@ -20,7 +20,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Full-screen Task View overlay for the active monitor
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
-- Type-to-filter search across window titles and applications
+- Search across window titles and applications (press `/` to start typing)
 - Virtual desktop strip with switching, creating and closing
 - Rename virtual desktops inline (saved the same way Windows stores them)
 - Move a window to another virtual desktop without leaving the overview
@@ -60,7 +60,7 @@ opens immediately instead of building the interface from scratch every time.
 | `h` `j` `k` `l` | Vim movement (move through the grid / desktop strip) |
 | `/` | Focus the search field |
 | `x` | Close the selected window (Vim) |
-| Printable keys | Filter windows by title or application |
+| Typing while the search is focused | Filter windows by title or application |
 | Left click | Activate a window or switch desktop |
 | Right click a desktop | Rename that virtual desktop |
 | Middle click on a card | Close that window |
@@ -68,9 +68,10 @@ opens immediately instead of building the interface from scratch every time.
 | Click `x` on the active desktop | Close the current virtual desktop |
 | Mouse wheel | Move through grid pages |
 
-Vim keys only move the selection while the search field is empty, so a query
-that contains `h`, `j`, `k`, `l` or `x` still works once you start typing or
-press `/`. Set **Vim navigation** to `off` to disable them.
+The search field is only typed into once it has focus: click it or press `/`
+first. Until then the letter keys are available to navigation, so a query that
+contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
+**Vim navigation** to `off` to disable the movement keys.
 
 ## Settings
 
@@ -88,16 +89,20 @@ press `/`. Set **Vim navigation** to `off` to disable them.
 
 **Background** controls what sits behind the panel:
 
-- **Acrylic** – blurred desktop with a translucent tint (default)
-- **Mica** – Windows 11 Mica material
-- **Mica Alt** – Windows 11 Mica Alt material
-- **Blur** – classic blur without the acrylic noise
-- **Solid** – opaque panel, ignores the opacity setting
-- **Transparent** – no backdrop effect; the live desktop shows through,
-  tinted only by the background color and opacity
+- **Acrylic** – the live desktop blurred by Windows, with a translucent tint
+  drawn on top (default)
+- **Mica** – the Windows 11 Mica material. Mica is a flat, wallpaper-tinted
+  surface rather than a blur
+- **Mica Alt** – the Windows 11 Mica Alt material
+- **Blur** – the classic (non-acrylic) blur
+- **Solid** – an opaque panel; ignores the opacity setting
+- **Transparent** – no backdrop effect; the live desktop shows through
 
-Lower **Background opacity** to see more of the desktop behind the overview;
-`0` is fully transparent and `100` is fully opaque.
+The tint color and opacity are drawn as a single layer on top of the backdrop,
+so **Background opacity** works the same way in every mode: `0` is fully
+transparent (just the blur or desktop) and `100` is fully opaque. On an opaque
+mode such as Solid the setting has no visible effect. Lower it to let more of
+the backdrop show through.
 
 ## How it works
 

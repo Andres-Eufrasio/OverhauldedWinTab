@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWin Tab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.2.0
+// @version         0.2.1
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -35,7 +35,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Full-screen Task View overlay for the active monitor
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
-- Type-to-filter search across window titles and applications
+- Search across window titles and applications (press `/` to start typing)
 - Virtual desktop strip with switching, creating and closing
 - Rename virtual desktops inline (saved the same way Windows stores them)
 - Move a window to another virtual desktop without leaving the overview
@@ -75,7 +75,7 @@ opens immediately instead of building the interface from scratch every time.
 | `h` `j` `k` `l` | Vim movement (move through the grid / desktop strip) |
 | `/` | Focus the search field |
 | `x` | Close the selected window (Vim) |
-| Printable keys | Filter windows by title or application |
+| Typing while the search is focused | Filter windows by title or application |
 | Left click | Activate a window or switch desktop |
 | Right click a desktop | Rename that virtual desktop |
 | Middle click on a card | Close that window |
@@ -83,9 +83,10 @@ opens immediately instead of building the interface from scratch every time.
 | Click `x` on the active desktop | Close the current virtual desktop |
 | Mouse wheel | Move through grid pages |
 
-Vim keys only move the selection while the search field is empty, so a query
-that contains `h`, `j`, `k`, `l` or `x` still works once you start typing or
-press `/`. Set **Vim navigation** to `off` to disable them.
+The search field is only typed into once it has focus: click it or press `/`
+first. Until then the letter keys are available to navigation, so a query that
+contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
+**Vim navigation** to `off` to disable the movement keys.
 
 ## Settings
 
@@ -103,16 +104,20 @@ press `/`. Set **Vim navigation** to `off` to disable them.
 
 **Background** controls what sits behind the panel:
 
-- **Acrylic** – blurred desktop with a translucent tint (default)
-- **Mica** – Windows 11 Mica material
-- **Mica Alt** – Windows 11 Mica Alt material
-- **Blur** – classic blur without the acrylic noise
-- **Solid** – opaque panel, ignores the opacity setting
-- **Transparent** – no backdrop effect; the live desktop shows through,
-  tinted only by the background color and opacity
+- **Acrylic** – the live desktop blurred by Windows, with a translucent tint
+  drawn on top (default)
+- **Mica** – the Windows 11 Mica material. Mica is a flat, wallpaper-tinted
+  surface rather than a blur
+- **Mica Alt** – the Windows 11 Mica Alt material
+- **Blur** – the classic (non-acrylic) blur
+- **Solid** – an opaque panel; ignores the opacity setting
+- **Transparent** – no backdrop effect; the live desktop shows through
 
-Lower **Background opacity** to see more of the desktop behind the overview;
-`0` is fully transparent and `100` is fully opaque.
+The tint color and opacity are drawn as a single layer on top of the backdrop,
+so **Background opacity** works the same way in every mode: `0` is fully
+transparent (just the blur or desktop) and `100` is fully opaque. On an opaque
+mode such as Solid the setting has no visible effect. Lower it to let more of
+the backdrop show through.
 
 ## How it works
 
@@ -181,7 +186,7 @@ OverhauldedWin Tab is a pre-release project.
       $description: Accent color used for highlights, in #RRGGBB format.
     - Background: "acrylic"
       $name: Background
-      $description: Backdrop effect behind the overview.
+      $description: Backdrop effect. Acrylic and Blur are live blurs; Mica is a flat, wallpaper-tinted surface.
       $options:
       - "acrylic": Acrylic
       - "mica": Mica
@@ -194,7 +199,7 @@ OverhauldedWin Tab is a pre-release project.
       $description: Tint color of the overview panel, in #RRGGBB format.
     - BackgroundOpacity: 70
       $name: Background opacity
-      $description: How strong the panel tint is over the backdrop (0-100). 0 is fully transparent, 100 is fully opaque.
+      $description: Strength of the panel tint drawn over the backdrop (0-100). 0 leaves the backdrop untouched, 100 is fully opaque.
     - ShowWindowIcons: true
       $name: Show window icons
       $description: Show each window's application icon in the card header.
@@ -729,6 +734,28 @@ static void EnsureTextFormats()
             format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         }
     }
+}
+
+// Width in pixels of a single-line string in the given format.
+static float MeasureTextWidth(const std::wstring& text, IDWriteTextFormat* format)
+{
+    if (!g_dwrite || !format || text.empty())
+        return 0.0f;
+
+    IDWriteTextLayout* layout = nullptr;
+    if (FAILED(g_dwrite->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()),
+                                          format, 8192.0f, 8192.0f, &layout)) ||
+        !layout)
+        return 0.0f;
+
+    // Trimming would report an ellipsized width, so measure with a large box and
+    // read the full text width.
+    DWRITE_TEXT_METRICS metrics = {};
+    const HRESULT hr = layout->GetMetrics(&metrics);
+    layout->Release();
+    if (FAILED(hr))
+        return 0.0f;
+    return metrics.widthIncludingTrailingWhitespace;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1311,13 +1338,16 @@ static void RebuildPills()
     {
         const bool renaming = g_renameDesktop == i;
         const std::wstring& shown = renaming ? g_renameText : g_desktops[i].name;
-        float w = 46.0f * s + static_cast<float>(shown.size()) * 7.6f * s;
+        const bool hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
+
+        // Badge + gaps + a name measured with the real font, plus caret room
+        // while renaming.
+        const float textW = MeasureTextWidth(shown, g_fmtPill);
+        float w = 40.0f * s + textW + (hasClose ? 30.0f * s : 14.0f * s);
         if (renaming)
-            w += 20.0f * s;  // Room for the caret while editing.
-        const float maxW = renaming ? 420.0f * s : 300.0f * s;
+            w += 18.0f * s;
+        const float maxW = renaming ? 460.0f * s : 320.0f * s;
         w = std::max(112.0f * s, std::min(maxW, w));
-        if (g_desktops.size() > 1 && i == g_currentDesktop)
-            w += 26.0f * s;
         nameWidths[i] = w;
         totalPills += w;
     }
@@ -1621,7 +1651,9 @@ static void RenderScene(HDC dc)
     // Backdrop scrim. The tint color and how strongly it covers the backdrop are
     // configurable; the OS material (acrylic / mica / blur) sits underneath.
     const RectF full = {0.0f, 0.0f, g_layout.w, g_layout.h};
-    FillRound(full, 0.0f, g_backgroundColor, BackgroundScrimAlpha());
+    const float baseScrim = BackgroundScrimAlpha();
+    if (baseScrim > 0.001f)
+        FillRound(full, 0.0f, g_backgroundColor, baseScrim);
 
     // Header title.
     const RectF titleRect = {56.0f * s, 40.0f * s, 340.0f * s, 40.0f * s + 46.0f * s};
@@ -1834,15 +1866,15 @@ static void RenderScene(HDC dc)
 
         if (renaming && ((GetTickCount64() / 530) % 2) == 0)
         {
-            const float approx = static_cast<float>(g_renameText.size()) * 7.6f * s;
-            const float caretX = std::min(nameRect.r, nameRect.l + approx + 1.0f * s);
+            const float textW = MeasureTextWidth(g_renameText, g_fmtPill);
+            const float caretX = std::min(nameRect.r, nameRect.l + textW + 1.0f * s);
             g_d2dBrush->SetColor(ColorOf(0xFFFFFFFF, 0.85f));
             g_d2dTarget->DrawLine(D2D1::Point2F(caretX, pill.rect.t + 11.0f * s),
                                   D2D1::Point2F(caretX, pill.rect.b - 11.0f * s),
                                   g_d2dBrush, 1.4f * s);
         }
 
-        if (pill.hasClose)
+        if (pill.hasClose && !renaming)
         {
             g_d2dBrush->SetColor(
                 ColorOf(0xFFFFFFFF, g_hoverPillClose == i ? 0.95f : 0.45f));
@@ -1998,7 +2030,7 @@ struct WindowCompositionAttributeData
     SIZE_T sizeOfData;
 };
 
-static void SetAccentPolicy(HWND hwnd, int state, DWORD gradientColor)
+static bool SetAccentPolicy(HWND hwnd, int state, int flags, DWORD gradientColor)
 {
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
     typedef BOOL(WINAPI * SetWindowCompositionAttributeFn)(HWND,
@@ -2008,21 +2040,48 @@ static void SetAccentPolicy(HWND hwnd, int state, DWORD gradientColor)
               GetProcAddress(user32, "SetWindowCompositionAttribute"))
         : nullptr;
     if (!setComposition)
-        return;
+        return false;
 
     AccentPolicy policy = {};
     policy.state = state;
-    policy.flags = 2;  // ACCENT_FLAG_DRAW_ALL_BORDERS
+    policy.flags = flags;
     policy.gradientColor = gradientColor;
     WindowCompositionAttributeData data = {};
     data.attribute = 19;  // WCA_ACCENT_POLICY
     data.data = &policy;
     data.sizeOfData = sizeof(policy);
-    setComposition(hwnd, &data);
+    return setComposition(hwnd, &data) != FALSE;
 }
 
-// Applies the configured backdrop effect. The D2D scrim drawn on top provides
-// the actual tint, so the OS effect only needs to supply the blur/material.
+// Blurs the whole client area. Required by the acrylic accent on Windows 11.
+static bool EnableBlurBehind(HWND hwnd)
+{
+    DWM_BLURBEHIND blur = {};
+    blur.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION | DWM_BB_TRANSITIONONMAXIMIZED;
+    blur.fEnable = TRUE;
+    blur.fTransitionOnMaximized = TRUE;
+    blur.hRgnBlur = CreateRectRgn(0, 0, -1, -1);
+    const BOOL ok = DwmEnableBlurBehindWindow(hwnd, &blur);
+    if (blur.hRgnBlur)
+        DeleteObject(blur.hRgnBlur);
+    return ok != FALSE;
+}
+
+// DWM only paints the system backdrop on windows it considers active, so nudge
+// it after the window is shown.
+static void TriggerWindowNCRendering(HWND hwnd)
+{
+    DefWindowProcW(hwnd, WM_NCACTIVATE, TRUE, 0);
+}
+
+// Applies the configured backdrop effect.
+//
+// The OS is only asked for the blur/material, never for the tint: on Windows 11
+// an acrylic accent with a non-zero gradient alpha tends to replace the blur
+// with a flat fill, and ACCENT_FLAG_ENABLE_MODERN_ACRYLIC_RECIPE (flag 2)
+// renders flat and ignores the gradient color entirely. Passing gradient alpha
+// 0 keeps a clean blur, and the D2D scrim then supplies the tint for every mode
+// through a single, consistent (and linear) opacity control.
 static void ApplyBackdrop(HWND hwnd)
 {
     MARGINS margins = {-1, -1, -1, -1};
@@ -2036,25 +2095,32 @@ static void ApplyBackdrop(HWND hwnd)
     DWORD border = 0xFFFFFFFE /* DWMWA_COLOR_NONE */;
     DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
 
-    // Reset any previously applied system backdrop / mica / accent before we
-    // apply the one that is configured now.
+    // Reset any previously applied effect before applying the configured one.
     DWORD noBackdrop = 1 /* DWMSBT_NONE */;
     DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &noBackdrop,
                           sizeof(noBackdrop));
     BOOL micaDisabled = FALSE;
     DwmSetWindowAttribute(hwnd, 1029 /* DWMWA_MICA_EFFECT */, &micaDisabled,
                           sizeof(micaDisabled));
-    SetAccentPolicy(hwnd, 0 /* ACCENT_DISABLED */, 0);
+    SetAccentPolicy(hwnd, 0 /* ACCENT_DISABLED */, 0, 0);
+
+    bool accentOk = false;
+    HRESULT backdropHr = E_FAIL;
+    bool blurOk = false;
 
     switch (g_backgroundMode)
     {
     case BackgroundMode::Acrylic:
-        // Pure blur; the D2D scrim supplies the tint so opacity is consistent
-        // across every mode.
-        SetAccentPolicy(hwnd, 4 /* ACCENT_ENABLE_ACRYLICBLURBEHIND */, 0x00000000);
+        // Blur only; flags stay 0 so the gradient color is not turned into a
+        // flat fill.
+        blurOk = EnableBlurBehind(hwnd);
+        accentOk = SetAccentPolicy(hwnd, 4 /* ACCENT_ENABLE_ACRYLICBLURBEHIND */, 0,
+                                   0x00000000);
         break;
     case BackgroundMode::Blur:
-        SetAccentPolicy(hwnd, 3 /* ACCENT_ENABLE_BLURBEHIND */, 0x00000000);
+        // The older, smoother Aero-style blur (no acrylic noise layer).
+        blurOk = EnableBlurBehind(hwnd);
+        accentOk = SetAccentPolicy(hwnd, 3 /* ACCENT_ENABLE_BLURBEHIND */, 0, 0x00000000);
         break;
     case BackgroundMode::Mica:
     case BackgroundMode::MicaAlt:
@@ -2062,26 +2128,43 @@ static void ApplyBackdrop(HWND hwnd)
         DWORD type = g_backgroundMode == BackgroundMode::Mica
                          ? 2 /* DWMSBT_MAINWINDOW */
                          : 4 /* DWMSBT_TABBEDWINDOW (Mica Alt) */;
-        DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &type, sizeof(type));
-        BOOL micaEnabled = TRUE;
-        DwmSetWindowAttribute(hwnd, 1029 /* DWMWA_MICA_EFFECT */, &micaEnabled,
-                              sizeof(micaEnabled));
+        backdropHr = DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &type,
+                                           sizeof(type));
+        TriggerWindowNCRendering(hwnd);
         break;
     }
     case BackgroundMode::Solid:
     case BackgroundMode::None:
         break;
     }
+
+    Wh_Log(L"Backdrop applied: mode=%d opacity=%.2f color=0x%08X glass=%d scrim=%.2f "
+           L"blur=%d accent=%d backdropHr=0x%08lX",
+           static_cast<int>(g_backgroundMode), g_backgroundOpacity, g_backgroundColor,
+           g_glass ? 1 : 0, BackgroundScrimAlpha(), blurOk ? 1 : 0, accentOk ? 1 : 0,
+           static_cast<unsigned long>(backdropHr));
 }
 
-// Opacity (0..1) that the solid-color scrim uses on top of the backdrop.
+// Opacity (0..1) of the color scrim drawn over the OS backdrop. The scrim is
+// what the "Background opacity" setting controls, so it applies to every mode:
+// at 0 the acrylic blur shows through untouched, at 1 the panel is solid.
 static float BackgroundScrimAlpha()
 {
     if (!g_glass)
-        return 0.96f;  // Without glass compositing a low alpha would look broken.
-    if (g_backgroundMode == BackgroundMode::Solid)
+        return 0.94f;  // Without glass a low alpha would expose the desktop raw.
+
+    switch (g_backgroundMode)
+    {
+    case BackgroundMode::Solid:
         return 1.0f;
-    return std::max(0.0f, std::min(1.0f, g_backgroundOpacity * 0.92f));
+    case BackgroundMode::Acrylic:
+    case BackgroundMode::Blur:
+    case BackgroundMode::Mica:
+    case BackgroundMode::MicaAlt:
+    case BackgroundMode::None:
+    default:
+        return std::max(0.0f, std::min(1.0f, g_backgroundOpacity));
+    }
 }
 
 static void ShowOverlay()
@@ -2396,13 +2479,35 @@ static void OnKeyDown(WPARAM key)
     const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
     const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 
-    switch (key)
+    // While the search field has focus, only editing keys are meaningful; this
+    // keeps Delete/arrows/etc. from triggering actions mid-query.
+    if (g_searchFocused)
     {
-    case VK_ESCAPE:
-        if (!g_search.empty())
+        if (key == VK_ESCAPE)
         {
             SetSearch(L"");
             g_searchFocused = false;
+            InvalidateRect(g_overlay, nullptr, FALSE);
+        }
+        else if (key == VK_RETURN)
+        {
+            ActivateEntry(g_selected);
+        }
+        else if (key == VK_BACK && !g_search.empty())
+        {
+            SetSearch(g_search.substr(0, g_search.size() - 1));
+        }
+        return;
+    }
+
+    switch (key)
+    {
+    case VK_ESCAPE:
+        if (g_searchFocused || !g_search.empty())
+        {
+            SetSearch(L"");
+            g_searchFocused = false;
+            InvalidateRect(g_overlay, nullptr, FALSE);
         }
         else
         {
@@ -2622,10 +2727,31 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 
     case WM_SETCURSOR:
     {
+        // Text cursor over the search field and over a desktop being renamed.
+        POINT pt = {};
+        GetCursorPos(&pt);
+        ScreenToClient(hwnd, &pt);
+        const float fx = static_cast<float>(pt.x);
+        const float fy = static_cast<float>(pt.y);
+
+        bool overText = Contains(g_layout.search, fx, fy) && !g_search.empty();
+        if (!overText && IsRenamingDesktop())
+        {
+            for (const PillView& pill : g_pills)
+            {
+                if (pill.desktop == g_renameDesktop && Contains(pill.rect, fx, fy))
+                {
+                    overText = true;
+                    break;
+                }
+            }
+        }
+
         const bool interactive = g_hoverCard >= 0 || g_hoverPill >= 0 || g_hoverCreate ||
                                  g_hoverSearch || g_hoverClose >= 0 ||
                                  g_hoverPillClose >= 0 || g_hoverSearchClear;
-        SetCursor(LoadCursorW(nullptr, interactive ? IDC_HAND : IDC_ARROW));
+        SetCursor(LoadCursorW(nullptr, overText ? IDC_IBEAM
+                                                : (interactive ? IDC_HAND : IDC_ARROW)));
         return TRUE;
     }
 
@@ -2648,15 +2774,23 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             return 0;
         }
 
-        WCHAR lower = ch;
-        if (lower >= L'A' && lower <= L'Z')
-            lower = static_cast<WCHAR>(lower - L'A' + L'a');
-
-        // Vim movement only applies before the search is being used, so typing a
-        // query that contains h/j/k/l/x still works once the field is active.
-        const bool freshInput = !g_searchFocused && g_search.empty();
-        if (g_vimNavigation && freshInput && lower != L'/')
+        // The search field has to be focused first (click it or press '/'); until
+        // then, printable keys are available to navigation commands only.
+        if (!g_searchFocused)
         {
+            if (ch == L'/')
+            {
+                FocusSearch();
+                return 0;
+            }
+
+            if (!g_vimNavigation)
+                return 0;
+
+            WCHAR lower = ch;
+            if (lower >= L'A' && lower <= L'Z')
+                lower = static_cast<WCHAR>(lower - L'A' + L'a');
+
             switch (lower)
             {
             case L'h':
@@ -2692,18 +2826,11 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                     CloseEntry(g_selected);
                 return 0;
             default:
-                break;
+                return 0;
             }
         }
 
-        if (freshInput && ch == L'/')
-        {
-            FocusSearch();
-            return 0;
-        }
-
         SetSearch(g_search + ch);
-        FocusSearch();
         return 0;
     }
 
