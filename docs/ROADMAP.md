@@ -19,6 +19,8 @@ Guiding rules:
 
 - `Appearance.DesktopStrip` (`flat` / `carousel`) - the carousel centres the
   active desktop and rotates as you switch (v0.4.0).
+- `Appearance.StripBackground` (`auto` / `show` / `hide`) - the carousel floats
+  by default with larger pills and no panel (v0.4.1).
 
 ## Phase 1 - Visual customization pack
 

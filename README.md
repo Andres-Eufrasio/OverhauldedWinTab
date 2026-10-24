@@ -101,6 +101,7 @@ movement keys.
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
 | Desktop strip | Flat row, or a rotating carousel that follows the active desktop |
+| Desktop strip background | Panel behind the pills: Auto (flat only), Always show, or Always hide |
 | Animation speed | Relative speed of the open and close animations |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
@@ -148,12 +149,18 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 **Desktop strip** chooses how the virtual desktops are laid out at the bottom:
 
 - **Flat row** (default) – every desktop pill in a single row, with the create
-  button after them
+  button after them and the strip panel behind them
 - **Carousel** – the active desktop sits in the centre, its neighbours curve and
-  tilt away, and the wheel turns as you switch. Selecting a desktop with `Tab`,
-  `h` / `l` or the arrows spins the strip to it; clicking a side pill jumps
-  straight there. The strip is a little taller in this mode so the tilted pills
-  have room.
+  tilt away, and the wheel turns as you switch. The pills are larger than in the
+  flat row and float directly over the desktop: the panel is hidden by default,
+  so the wheel has no box around it. Selecting a desktop with `Tab`, `h` / `l`
+  or the arrows spins the strip to it; clicking a side pill jumps straight
+  there.
+
+**Desktop strip background** controls the panel behind the pills: **Auto**
+(default) keeps it for the flat row and hides it for the carousel, **Always
+show** brings it back in carousel mode, and **Always hide** makes the flat row
+float as well.
 
 ## Search
 

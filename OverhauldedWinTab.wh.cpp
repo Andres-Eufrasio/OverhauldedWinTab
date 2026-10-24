@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.4.0
+// @version         0.4.1
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -116,6 +116,7 @@ movement keys.
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
 | Desktop strip | Flat row, or a rotating carousel that follows the active desktop |
+| Desktop strip background | Panel behind the pills: Auto (flat only), Always show, or Always hide |
 | Animation speed | Relative speed of the open and close animations |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
@@ -163,12 +164,18 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 **Desktop strip** chooses how the virtual desktops are laid out at the bottom:
 
 - **Flat row** (default) – every desktop pill in a single row, with the create
-  button after them
+  button after them and the strip panel behind them
 - **Carousel** – the active desktop sits in the centre, its neighbours curve and
-  tilt away, and the wheel turns as you switch. Selecting a desktop with `Tab`,
-  `h` / `l` or the arrows spins the strip to it; clicking a side pill jumps
-  straight there. The strip is a little taller in this mode so the tilted pills
-  have room.
+  tilt away, and the wheel turns as you switch. The pills are larger than in the
+  flat row and float directly over the desktop: the panel is hidden by default,
+  so the wheel has no box around it. Selecting a desktop with `Tab`, `h` / `l`
+  or the arrows spins the strip to it; clicking a side pill jumps straight
+  there.
+
+**Desktop strip background** controls the panel behind the pills: **Auto**
+(default) keeps it for the flat row and hides it for the carousel, **Always
+show** brings it back in carousel mode, and **Always hide** makes the flat row
+float as well.
 
 ## Search
 
@@ -295,6 +302,13 @@ OverhauldedWinTab is a pre-release project.
       $options:
       - "flat": Flat row
       - "carousel": Carousel
+    - StripBackground: "auto"
+      $name: Desktop strip background
+      $description: Panel behind the virtual desktop pills. Auto shows it for the flat row and hides it for the floating carousel.
+      $options:
+      - "auto": Auto
+      - "show": Always show
+      - "hide": Always hide
     - AnimationSpeed: "100"
       $name: Animation speed
       $description: Relative speed of the open and close animations.
@@ -479,6 +493,14 @@ enum class StripStyle
     Carousel
 };
 
+// Panel behind the desktop pills.
+enum class StripBackground
+{
+    Auto,
+    Show,
+    Hide
+};
+
 // Settings.
 static UINT32 g_accent = 0xFF4CC2FF;
 static BackgroundMode g_backgroundMode = BackgroundMode::Acrylic;
@@ -488,6 +510,7 @@ static bool g_showIcons = true;
 static bool g_showHints = true;
 static bool g_searchAlwaysVisible = true;
 static StripStyle g_stripStyle = StripStyle::Flat;
+static StripBackground g_stripBackground = StripBackground::Auto;
 static int g_animSpeedPercent = 100;
 static bool g_closeOnFocusLoss = true;
 static bool g_wrapNavigation = true;
@@ -596,6 +619,7 @@ static IDWriteTextFormat* g_fmtTitle = nullptr;
 static IDWriteTextFormat* g_fmtCard = nullptr;
 static IDWriteTextFormat* g_fmtSearch = nullptr;
 static IDWriteTextFormat* g_fmtPill = nullptr;
+static IDWriteTextFormat* g_fmtPillLarge = nullptr;
 static IDWriteTextFormat* g_fmtHint = nullptr;
 static IDWriteTextFormat* g_fmtEmpty = nullptr;
 static IDWriteInlineObject* g_ellipsis = nullptr;
@@ -879,6 +903,10 @@ static void LoadSettings()
     g_searchAlwaysVisible = Wh_GetIntSetting(L"Appearance.AlwaysShowSearch") != 0;
     const std::wstring strip = read(L"Appearance.DesktopStrip");
     g_stripStyle = strip == L"carousel" ? StripStyle::Carousel : StripStyle::Flat;
+    const std::wstring stripBackground = read(L"Appearance.StripBackground");
+    g_stripBackground = stripBackground == L"show" ? StripBackground::Show
+                      : stripBackground == L"hide" ? StripBackground::Hide
+                                                   : StripBackground::Auto;
 
     const std::wstring speed = read(L"Appearance.AnimationSpeed");
     g_animSpeedPercent = speed == L"75" ? 75 : speed == L"125" ? 125
@@ -940,6 +968,7 @@ static void ReleaseTextFormats()
     release(g_fmtCard);
     release(g_fmtSearch);
     release(g_fmtPill);
+    release(g_fmtPillLarge);
     release(g_fmtHint);
     release(g_fmtEmpty);
     if (g_ellipsis) { g_ellipsis->Release(); g_ellipsis = nullptr; }
@@ -1030,6 +1059,7 @@ static void EnsureTextFormats()
     create(g_dwrite, DWRITE_FONT_WEIGHT_NORMAL, 13.0f * g_scale, &g_fmtCard);
     create(g_dwrite, DWRITE_FONT_WEIGHT_NORMAL, 15.0f * g_scale, &g_fmtSearch);
     create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 13.0f * g_scale, &g_fmtPill);
+    create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 15.0f * g_scale, &g_fmtPillLarge);
     create(g_dwrite, DWRITE_FONT_WEIGHT_NORMAL, 12.0f * g_scale, &g_fmtHint);
     create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 17.0f * g_scale, &g_fmtEmpty);
 
@@ -1052,10 +1082,15 @@ static void EnsureTextFormats()
         DWRITE_TRIMMING trimming = {};
         trimming.granularity = DWRITE_TRIMMING_GRANULARITY_CHARACTER;
         g_fmtPill->SetTrimming(&trimming, g_ellipsis);
+        if (g_fmtPillLarge)
+        {
+            g_fmtPillLarge->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+            g_fmtPillLarge->SetTrimming(&trimming, g_ellipsis);
+        }
     }
 
     IDWriteTextFormat* formats[] = {g_fmtTitle, g_fmtCard, g_fmtSearch,
-                                    g_fmtPill, g_fmtHint, g_fmtEmpty};
+                                    g_fmtPill, g_fmtPillLarge, g_fmtHint, g_fmtEmpty};
     for (IDWriteTextFormat* format : formats)
     {
         if (format)
@@ -1950,6 +1985,15 @@ static int StripTarget()
     return g_currentDesktop;
 }
 
+static bool StripBackgroundVisible()
+{
+    if (g_stripBackground == StripBackground::Show)
+        return true;
+    if (g_stripBackground == StripBackground::Hide)
+        return false;
+    return g_stripStyle != StripStyle::Carousel;
+}
+
 static void KickCarousel()
 {
     if (!g_overlay || g_stripStyle != StripStyle::Carousel)
@@ -2004,6 +2048,12 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
 ////////////////////////////////////////////////////////////////////////////////
 // LAYOUT
 
+static IDWriteTextFormat* PillFormat()
+{
+    return (g_stripStyle == StripStyle::Carousel && g_fmtPillLarge) ? g_fmtPillLarge
+                                                                    : g_fmtPill;
+}
+
 static RectF TransformedBounds(const RectF& rect, float scale, float degrees)
 {
     const float cx = (rect.l + rect.r) / 2.0f;
@@ -2022,7 +2072,7 @@ static void RebuildPills()
 {
     g_pills.clear();
     const float s = g_scale;
-    const float pillH = 42.0f * s;
+    const float pillH = (g_stripStyle == StripStyle::Carousel ? 52.0f : 42.0f) * s;
     const float gap = 10.0f * s;
     const float createW = 42.0f * s;
 
@@ -2038,7 +2088,7 @@ static void RebuildPills()
 
         // Badge + gaps + a name measured with the real font, plus caret room
         // while renaming.
-        const float textW = MeasureTextWidth(shown, g_fmtPill);
+        const float textW = MeasureTextWidth(shown, PillFormat());
         float w = 40.0f * s + textW + (hasClose ? 30.0f * s : 14.0f * s);
         if (renaming)
             w += 18.0f * s;
@@ -2061,11 +2111,18 @@ static void RebuildPills()
         // room because it is always centred while editing.
         const bool renaming = g_renameDesktop >= 0;
         const float pillW = renaming
-            ? 360.0f * s
-            : std::max(140.0f * s, std::min(280.0f * s, maxWidth));
-        const float pitch = pillW + 14.0f * s;
+            ? 380.0f * s
+            : std::max(160.0f * s, std::min(320.0f * s, maxWidth));
+        const float pitch = pillW + 16.0f * s;
         const float cx = g_layout.strip.l + g_layout.strip.W() / 2.0f;
         const float cy = g_layout.strip.t + g_layout.strip.H() / 2.0f;
+
+        // Keep the farthest visible pill clear of the create button; narrow
+        // monitors show fewer neighbours instead of shrinking the wheel.
+        const float rightLimit = g_layout.strip.r - createW - 24.0f * s;
+        const float maxOffset = std::max(0.0f, rightLimit - cx);
+        const float visibleDepth =
+            std::max(0.5f, std::min(2.25f, maxOffset / (pitch * 0.82f) - 0.15f));
 
         for (int i = 0; i < count; i++)
         {
@@ -2076,7 +2133,7 @@ static void RebuildPills()
             pill.desktop = i;
             pill.hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
             pill.depth = d;
-            pill.visible = ad <= 2.25f;
+            pill.visible = ad <= visibleDepth;
             if (pill.visible)
             {
                 pill.scale = std::max(0.55f, 1.0f - 0.18f * ad);
@@ -2196,7 +2253,7 @@ static void UpdateLayout()
         g_searchClearRect = {};
     }
 
-    const float stripH = (g_stripStyle == StripStyle::Carousel ? 84.0f : 64.0f) * s;
+    const float stripH = (g_stripStyle == StripStyle::Carousel ? 96.0f : 64.0f) * s;
     const float stripBottom = g_layout.h - 46.0f * s;
     g_layout.strip = {margin, stripBottom - stripH, g_layout.w - margin, stripBottom};
     g_layout.grid = {margin, g_layout.search.b + 42.0f * s, g_layout.w - margin,
@@ -2662,9 +2719,13 @@ static void RenderScene(HDC dc)
                       DWRITE_TEXT_ALIGNMENT_TRAILING, 0.55f);
     }
 
-    // Desktop strip.
-    FillRound(g_layout.strip, 14.0f * s, g_theme.stripFill, 0.90f);
-    StrokeRound(g_layout.strip, 14.0f * s, g_theme.text, 1.0f * s, 0.07f);
+    // Desktop strip. The panel is optional so the pills can float over the
+    // desktop, which is the default for the carousel.
+    if (StripBackgroundVisible())
+    {
+        FillRound(g_layout.strip, 14.0f * s, g_theme.stripFill, 0.90f);
+        StrokeRound(g_layout.strip, 14.0f * s, g_theme.text, 1.0f * s, 0.07f);
+    }
 
     // Farthest pills first so the centred one stays on top as the wheel turns.
     int drawOrder[64] = {};
@@ -2698,6 +2759,14 @@ static void RenderScene(HDC dc)
         UINT32 fill = active ? g_theme.pillActive : g_theme.pillFill;
         if (hovered)
             fill = active ? g_theme.pillActiveHover : g_theme.pillHover;
+
+        if (!StripBackgroundVisible())
+        {
+            const RectF shadow = {pill.rect.l, pill.rect.t + 5.0f * s,
+                                  pill.rect.r, pill.rect.b + 9.0f * s};
+            FillRound(shadow, 12.0f * s, 0xFF000000, 0.30f * pill.alpha);
+        }
+
         FillRound(pill.rect, 10.0f * s, fill, pill.alpha);
 
         if (selected)
@@ -2712,7 +2781,7 @@ static void RenderScene(HDC dc)
                              pill.rect.l + 34.0f * s, pill.rect.b - 9.0f * s};
         FillRound(badge, 6.0f * s, active ? g_theme.accent : g_theme.text,
                   (active ? 0.9f : 0.12f) * pill.alpha);
-        DrawTextBlock(std::to_wstring(pill.desktop + 1), g_fmtPill, badge,
+        DrawTextBlock(std::to_wstring(pill.desktop + 1), PillFormat(), badge,
                       active ? g_theme.onAccent : g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_CENTER, 0.95f * pill.alpha);
 
@@ -2723,13 +2792,13 @@ static void RenderScene(HDC dc)
                                 pill.rect.b};
         const std::wstring& shownName =
             renaming ? g_renameText : g_desktops[pill.desktop].name;
-        DrawTextBlock(shownName, g_fmtPill, nameRect, g_theme.text,
+        DrawTextBlock(shownName, PillFormat(), nameRect, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_LEADING,
                       ((active || renaming) ? 0.95f : 0.72f) * pill.alpha);
 
         if (renaming && ((GetTickCount64() / 530) % 2) == 0)
         {
-            const float textW = MeasureTextWidth(g_renameText, g_fmtPill);
+            const float textW = MeasureTextWidth(g_renameText, PillFormat());
             const float caretX = std::min(nameRect.r, nameRect.l + textW + 1.0f * s);
             g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.85f * pill.alpha));
             g_d2dTarget->DrawLine(D2D1::Point2F(caretX, pill.rect.t + 11.0f * s),
@@ -2758,6 +2827,12 @@ static void RenderScene(HDC dc)
     }
 
     // Create-desktop button.
+    if (!StripBackgroundVisible())
+    {
+        const RectF shadow = {g_createRect.l, g_createRect.t + 5.0f * s,
+                              g_createRect.r, g_createRect.b + 9.0f * s};
+        FillRound(shadow, 12.0f * s, 0xFF000000, 0.30f);
+    }
     FillRound(g_createRect, 10.0f * s,
               g_hoverCreate ? g_theme.pillActive : g_theme.pillFill, 1.0f);
     StrokeRound(g_createRect, 10.0f * s, g_theme.text, 1.2f * s, 0.10f);

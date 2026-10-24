@@ -229,11 +229,15 @@ the hint line.
 `Appearance.DesktopStrip` selects the strip layout. In carousel mode
 `RebuildPills` gives every pill one width and places it by its wrapped distance
 `d` from `g_carouselPos`, with `scale = 1 - 0.18|d|`, a `4.5d` degree tilt, a
-small vertical arc and an alpha fade. The strip is taller (84 px at 100%) so
-rotated pills stay inside it. `kTimerCarousel` eases `g_carouselPos` towards
-`StripTarget()` (strip selection, pending desktop switch, or active desktop) by
-the shortest route around the wheel, and `KickCarousel()` restarts the timer when
-the target changes. Rendering sorts visible pills farthest-first and applies a
+small vertical arc and an alpha fade. Carousel pills are larger (52 px high,
+up to 320 px wide, 15 px label) and the strip is taller (96 px at 100%) so the
+rotated pills stay inside it. `Appearance.StripBackground` controls the panel:
+`Auto` keeps it in the flat row and hides it for the carousel,
+`StripBackgroundVisible()` resolves the three modes, and floating pills get a
+soft drop shadow. `kTimerCarousel` eases `g_carouselPos` towards `StripTarget()`
+(strip selection, pending desktop switch, or active desktop) by the shortest
+route around the wheel, and `KickCarousel()` restarts the timer when the target
+changes. Rendering sorts visible pills farthest-first and applies a
 scale/rotation transform about each pill centre; hit testing uses the transformed
 bounding box and prefers the pill closest to the centre.
 
