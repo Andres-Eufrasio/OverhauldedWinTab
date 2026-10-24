@@ -21,9 +21,11 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
-- Virtual desktop strip with switching, creating and closing
+- Virtual desktop strip with switching, creating and closing; clicking a desktop
+  jumps straight to it instead of stepping through the ones in between
 - Rename virtual desktops inline (saved the same way Windows stores them)
 - Move a window to another virtual desktop without leaving the overview
+- Hold a window with `U` so it follows you to every desktop you switch to
 - Vim-style navigation (`h` `j` `k` `l`, `/`, `x`)
 - Color themes with a built-in Catppuccin set (Mocha, Macchiato, Frappe, Latte),
   Nord, Dracula, Tokyo Night, Gruvbox and Rose Pine
@@ -57,13 +59,15 @@ opens immediately instead of building the interface from scratch every time.
 | `Tab` | Toggle between the grid and the desktop strip |
 | `Ctrl` + `Left` / `Right` | Switch to the previous / next virtual desktop |
 | `Shift` + `Left` / `Right` | Move the selected window to the previous / next desktop |
+| `M` then `1`-`9` | Move the selected window to that numbered desktop |
+| `U` | Hold or release the selected window; held windows follow you across desktops |
 | `F2` | Rename the selected (or current) virtual desktop |
 | `N` | Create a new virtual desktop (strip focused) |
 | `h` `j` `k` `l` | Vim movement (move through the grid / desktop strip) |
 | `/` | Focus the search field |
 | `x` | Close the selected window (Vim) |
 | Typing while the search is focused | Filter windows by title or application |
-| Left click | Activate a window or switch desktop |
+| Left click | Activate a window, or jump straight to a desktop |
 | Right click a desktop | Rename that virtual desktop |
 | Middle click on a card | Close that window |
 | Click `+` on the strip | Create a new virtual desktop |
@@ -148,6 +152,12 @@ uses (`HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name`), so renames are
 picked up by Windows and other tools. Moving a window to another desktop uses
 the documented `IVirtualDesktopManager::MoveWindowToDesktop` API rather than
 synthesized hotkeys.
+
+Switching desktops calls the shell's internal `IVirtualDesktopManagerInternal`
+so clicking a desktop pill goes straight there. Creating or closing a desktop
+still presses the system shortcut (`Win` + `Ctrl` + `D` / `F4`), and if the
+internal interface is unavailable the switch falls back to
+`Win` + `Ctrl` + `Left`/`Right` as well.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 

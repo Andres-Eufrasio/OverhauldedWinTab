@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWin Tab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.2.4
+// @version         0.3.0
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -36,9 +36,11 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
-- Virtual desktop strip with switching, creating and closing
+- Virtual desktop strip with switching, creating and closing; clicking a desktop
+  jumps straight to it instead of stepping through the ones in between
 - Rename virtual desktops inline (saved the same way Windows stores them)
 - Move a window to another virtual desktop without leaving the overview
+- Hold a window with `U` so it follows you to every desktop you switch to
 - Vim-style navigation (`h` `j` `k` `l`, `/`, `x`)
 - Color themes with a built-in Catppuccin set (Mocha, Macchiato, Frappe, Latte),
   Nord, Dracula, Tokyo Night, Gruvbox and Rose Pine
@@ -72,13 +74,15 @@ opens immediately instead of building the interface from scratch every time.
 | `Tab` | Toggle between the grid and the desktop strip |
 | `Ctrl` + `Left` / `Right` | Switch to the previous / next virtual desktop |
 | `Shift` + `Left` / `Right` | Move the selected window to the previous / next desktop |
+| `M` then `1`-`9` | Move the selected window to that numbered desktop |
+| `U` | Hold or release the selected window; held windows follow you across desktops |
 | `F2` | Rename the selected (or current) virtual desktop |
 | `N` | Create a new virtual desktop (strip focused) |
 | `h` `j` `k` `l` | Vim movement (move through the grid / desktop strip) |
 | `/` | Focus the search field |
 | `x` | Close the selected window (Vim) |
 | Typing while the search is focused | Filter windows by title or application |
-| Left click | Activate a window or switch desktop |
+| Left click | Activate a window, or jump straight to a desktop |
 | Right click a desktop | Rename that virtual desktop |
 | Middle click on a card | Close that window |
 | Click `+` on the strip | Create a new virtual desktop |
@@ -163,6 +167,12 @@ uses (`HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name`), so renames are
 picked up by Windows and other tools. Moving a window to another desktop uses
 the documented `IVirtualDesktopManager::MoveWindowToDesktop` API rather than
 synthesized hotkeys.
+
+Switching desktops calls the shell's internal `IVirtualDesktopManagerInternal`
+so clicking a desktop pill goes straight there. Creating or closing a desktop
+still presses the system shortcut (`Win` + `Ctrl` + `D` / `F4`), and if the
+internal interface is unavailable the switch falls back to
+`Win` + `Ctrl` + `Left`/`Right` as well.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 
@@ -310,6 +320,7 @@ enum
     kTimerIdle = 2,
     kTimerCaret = 3,
     kTimerDesktop = 4,
+    kTimerHeldWatch = 5,
 };
 
 // Manual GUIDs: the tool is compiled without __uuidof support.
@@ -321,6 +332,21 @@ static const IID kIidVirtualDesktopManager = {
     0xa5cd92ff, 0x29be, 0x454c, {0x8d, 0x04, 0xd8, 0x28, 0x79, 0xfb, 0x3f, 0x1b}};
 static const CLSID kClsidVirtualDesktopManager = {
     0xaa509086, 0x5ca9, 0x4c25, {0x8f, 0x95, 0x58, 0x9d, 0x3c, 0x07, 0xb4, 0x8a}};
+
+// Shell internals used for switching straight to a desktop. The ids are the
+// documented-by-reverse-engineering ones that have been stable on Windows 11
+// since 21H2; the layout only matters up to SwitchDesktop, which sits before the
+// per-build additions, so these offsets are safe across builds.
+static const CLSID kClsidImmersiveShell = {
+    0xc2f03a33, 0x21f5, 0x47fa, {0xb4, 0xbb, 0x15, 0x63, 0x62, 0xa2, 0xf2, 0x39}};
+static const CLSID kClsidVirtualDesktopManagerInternal = {
+    0xc5e0cdca, 0x7b6e, 0x41b2, {0x9f, 0xc4, 0xd9, 0x39, 0x75, 0xcc, 0x46, 0x7b}};
+static const IID kIidShellServiceProvider = {
+    0x6d5140c1, 0x7436, 0x11ce, {0x80, 0x34, 0x00, 0xaa, 0x00, 0x60, 0x09, 0xfa}};
+static const IID kIidVirtualDesktopManagerInternal = {
+    0x53f5ca0b, 0x158f, 0x4124, {0x90, 0x0c, 0x05, 0x71, 0x58, 0x06, 0x0b, 0x27}};
+static const IID kIidVirtualDesktop = {
+    0x3f07f4be, 0xb107, 0x441a, {0xaf, 0x0f, 0x39, 0xd8, 0x25, 0x29, 0x07, 0x2c}};
 
 ////////////////////////////////////////////////////////////////////////////////
 // SMALL HELPERS
@@ -456,6 +482,25 @@ static bool g_hoverSearchClear = false;
 static int g_renameDesktop = -1;
 static std::wstring g_renameText;
 
+// Tasks the user has "held" with u. A held task is framed in its own colour and
+// is carried along when the active desktop changes, so it follows the user until
+// it is released with u again.
+struct HeldTask
+{
+    HWND hwnd = nullptr;
+    UINT32 color = 0;
+};
+static std::vector<HeldTask> g_held;
+static int g_nextHeldColor = 0;
+
+// True while waiting for the desktop number after pressing m.
+static bool g_pendingMove = false;
+
+// Last desktop seen by the background watcher (see ControlWndProc).
+static GUID g_watchedDesktop = {};
+static bool g_hasWatchedDesktop = false;
+static bool g_heldWatchOn = false;
+
 // Data model.
 struct WindowEntry
 {
@@ -480,6 +525,10 @@ static std::vector<int> g_filtered;
 static std::vector<DesktopInfo> g_desktops;
 static int g_currentDesktop = 0;
 static IVirtualDesktopManager* g_vdm = nullptr;
+static IUnknown* g_vdInternal = nullptr;
+static bool g_vdInternalResolved = false;
+static int g_pendingDesktopTarget = -1;
+static int g_pendingDesktopTries = 0;
 
 // Direct2D / DirectWrite.
 static ID2D1Factory* g_d2dFactory = nullptr;
@@ -538,6 +587,10 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
 static void RebuildWindowList();
 static void RefreshDesktops();
 static void MoveSelectedWindowToDesktop(int delta);
+static void MoveSelectedWindowToDesktopIndex(int index);
+static void ToggleHold();
+static void StartHeldWatch();
+static void StopHeldWatch();
 static void SwitchDesktopBy(int delta);
 static void BeginRenameDesktop(int index);
 static void CommitRenameDesktop();
@@ -1337,6 +1390,20 @@ static void RefreshDesktops()
         g_desktopSelected = g_currentDesktop;
 }
 
+// Reads the id of the desktop that is active right now. Used while the overlay
+// is hidden, where the overlay window's own desktop id is stale.
+static bool ReadActiveDesktopId(GUID* id)
+{
+    std::vector<BYTE> bytes;
+    const std::wstring base =
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VirtualDesktops";
+    if (!ReadRegistryBinary(HKEY_CURRENT_USER, base.c_str(), L"CurrentVirtualDesktop", bytes) ||
+        bytes.size() < sizeof(GUID))
+        return false;
+    memcpy(id, bytes.data(), sizeof(GUID));
+    return true;
+}
+
 // --- Virtual desktop names --------------------------------------------------
 
 static bool WriteDesktopName(const GUID& id, const std::wstring& name)
@@ -1425,32 +1492,170 @@ static bool IsRenamingDesktop()
 
 // --- Desktop actions --------------------------------------------------------
 
-// Moves the selected window (or the window that opened the overview) to an
-// adjacent virtual desktop using the documented IVirtualDesktopManager API.
-static void MoveSelectedWindowToDesktop(int delta)
+// The window that the card actions apply to: the selected one, falling back to
+// the window that opened the overview.
+static HWND SelectedWindow()
 {
-    if (!g_vdm || g_desktops.empty())
-        return;
-
-    const int target = g_currentDesktop + delta;
-    if (target < 0 || target >= static_cast<int>(g_desktops.size()))
-        return;
-
     HWND window = nullptr;
     if (g_selected >= 0 && g_selected < static_cast<int>(g_filtered.size()))
         window = g_windows[g_filtered[g_selected]].hwnd;
     if (!window || !IsWindow(window))
         window = g_originWindow;
     if (!window || !IsWindow(window))
+        return nullptr;
+    return window;
+}
+
+// --- Held tasks -------------------------------------------------------------
+
+// Colours a held task can take. Successive holds cycle through them so several
+// held tasks stay distinguishable.
+static const UINT32 kHeldColors[] = {
+    0xFFF9E2AF, 0xFF89B4FA, 0xFFA6E3A1, 0xFFF38BA8, 0xFFCBA6F7, 0xFF94E2D5,
+};
+
+static UINT32 HeldColorOf(HWND hwnd)
+{
+    for (const HeldTask& task : g_held)
+        if (task.hwnd == hwnd)
+            return task.color;
+    return 0;
+}
+
+static void ReleaseHeldTask(HWND hwnd)
+{
+    for (size_t i = 0; i < g_held.size(); i++)
+        if (g_held[i].hwnd == hwnd)
+        {
+            g_held.erase(g_held.begin() + static_cast<ptrdiff_t>(i));
+            return;
+        }
+}
+
+// Drops held tasks whose window is gone.
+static void PruneHeldTasks()
+{
+    for (size_t i = g_held.size(); i-- > 0;)
+        if (!g_held[i].hwnd || !IsWindow(g_held[i].hwnd))
+            g_held.erase(g_held.begin() + static_cast<ptrdiff_t>(i));
+}
+
+// Toggles the hold on the selected window: the first press gives it a colour and
+// holds it, the next press releases it.
+static void ToggleHold()
+{
+    HWND window = SelectedWindow();
+    if (!window)
+        return;
+
+    if (HeldColorOf(window))
+    {
+        ReleaseHeldTask(window);
+        if (g_held.empty())
+            StopHeldWatch();
+    }
+    else
+    {
+        HeldTask task;
+        task.hwnd = window;
+        task.color = kHeldColors[g_nextHeldColor % ARRAYSIZE(kHeldColors)];
+        g_nextHeldColor++;
+        g_held.push_back(task);
+        StartHeldWatch();
+    }
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
+// Carries every held task onto the given desktop, so held tasks follow the user.
+// The caller can suppress the rebuild when it is about to rebuild anyway.
+static void MoveHeldTasksToDesktop(const GUID& id, bool rebuild = true)
+{
+    if (!g_vdm || g_held.empty())
+        return;
+
+    bool changed = false;
+    for (size_t i = g_held.size(); i-- > 0;)
+    {
+        HWND window = g_held[i].hwnd;
+        if (!window || !IsWindow(window))
+        {
+            g_held.erase(g_held.begin() + static_cast<ptrdiff_t>(i));
+            continue;
+        }
+
+        GUID current = {};
+        if (SUCCEEDED(g_vdm->GetWindowDesktopId(window, &current)) && IsEqualGUID(current, id))
+            continue;
+
+        if (SUCCEEDED(g_vdm->MoveWindowToDesktop(window, id)))
+            changed = true;
+    }
+
+    if (changed && rebuild && g_visible && g_overlay)
+    {
+        ReleaseThumbnails();
+        RebuildWindowList();
+        g_desktopSelected = g_currentDesktop;
+        InvalidateRect(g_overlay, nullptr, FALSE);
+    }
+}
+
+// Watches the active desktop while tasks are held, so they can follow the user
+// even when the overview is closed. The timer lives on the message-only control
+// window, which keeps ticking while the overlay is hidden.
+static void StartHeldWatch()
+{
+    if (!g_control || g_heldWatchOn)
+        return;
+
+    GUID id = {};
+    g_hasWatchedDesktop = ReadActiveDesktopId(&id);
+    if (g_hasWatchedDesktop)
+        g_watchedDesktop = id;
+
+    SetTimer(g_control, kTimerHeldWatch, 200, nullptr);
+    g_heldWatchOn = true;
+}
+
+static void StopHeldWatch()
+{
+    if (g_control && g_heldWatchOn)
+        KillTimer(g_control, kTimerHeldWatch);
+    g_heldWatchOn = false;
+    g_hasWatchedDesktop = false;
+}
+
+// Moves the selected window to the given virtual desktop using the documented
+// IVirtualDesktopManager API.
+static void MoveSelectedWindowToDesktopIndex(int index)
+{
+    if (!g_vdm || g_desktops.empty())
+        return;
+    if (index < 0 || index >= static_cast<int>(g_desktops.size()))
+        return;
+    if (index == g_currentDesktop)
+        return;  // Already there.
+
+    HWND window = SelectedWindow();
+    if (!window)
         return;
 
     ReleaseThumbnails();
-    if (SUCCEEDED(g_vdm->MoveWindowToDesktop(window, g_desktops[target].id)))
+    if (SUCCEEDED(g_vdm->MoveWindowToDesktop(window, g_desktops[index].id)))
     {
         RebuildWindowList();
         g_desktopSelected = g_currentDesktop;
     }
     InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
+// Moves the selected window (or the window that opened the overview) to an
+// adjacent virtual desktop.
+static void MoveSelectedWindowToDesktop(int delta)
+{
+    if (g_desktops.empty())
+        return;
+    MoveSelectedWindowToDesktopIndex(g_currentDesktop + delta);
 }
 
 // Switches to another virtual desktop while keeping the overview open.
@@ -1489,6 +1694,81 @@ static void SendChord(WORD vk, bool extended)
     SendInput(index, inputs, sizeof(INPUT));
 }
 
+// Switches straight to a desktop through the shell's undocumented
+// IVirtualDesktopManagerInternal instead of stepping with Win+Ctrl+Arrow.
+// Returns false when the interface is unavailable, so callers can fall back.
+static bool SwitchDesktopDirect(const GUID& id)
+{
+    if (!g_vdInternalResolved)
+    {
+        g_vdInternalResolved = true;
+
+        IUnknown* provider = nullptr;
+        if (SUCCEEDED(CoCreateInstance(kClsidImmersiveShell, nullptr, CLSCTX_ALL,
+                                       kIidShellServiceProvider,
+                                       reinterpret_cast<void**>(&provider))) &&
+            provider)
+        {
+            // IServiceProvider::QueryService, vtable slot 3.
+            typedef HRESULT(STDMETHODCALLTYPE * QueryServiceFn)(void*, const GUID&,
+                                                                const GUID&, void**);
+            auto queryService = reinterpret_cast<QueryServiceFn>(
+                (*reinterpret_cast<void***>(provider))[3]);
+            queryService(provider, kClsidVirtualDesktopManagerInternal,
+                         kIidVirtualDesktopManagerInternal,
+                         reinterpret_cast<void**>(&g_vdInternal));
+            provider->Release();
+        }
+    }
+
+    if (!g_vdInternal)
+        return false;
+
+    // IVirtualDesktopManagerInternal vtable: GetDesktops is slot 7 and
+    // SwitchDesktop is slot 9 on every Windows 11 build.
+    typedef HRESULT(STDMETHODCALLTYPE * GetDesktopsFn)(void*, IUnknown**);
+    typedef HRESULT(STDMETHODCALLTYPE * GetCountFn)(void*, UINT*);
+    typedef HRESULT(STDMETHODCALLTYPE * GetAtFn)(void*, UINT, const GUID&, void**);
+    typedef HRESULT(STDMETHODCALLTYPE * GetIdFn)(void*, GUID*);
+    typedef HRESULT(STDMETHODCALLTYPE * SwitchFn)(void*, void*);
+
+    void** manager = *reinterpret_cast<void***>(g_vdInternal);
+    IUnknown* desktops = nullptr;
+    if (FAILED(reinterpret_cast<GetDesktopsFn>(manager[7])(g_vdInternal, &desktops)) ||
+        !desktops)
+        return false;
+
+    // IObjectArray: GetCount is slot 3, GetAt is slot 4.
+    void** array = *reinterpret_cast<void***>(desktops);
+    UINT count = 0;
+    reinterpret_cast<GetCountFn>(array[3])(desktops, &count);
+
+    bool switched = false;
+    for (UINT i = 0; i < count && !switched; i++)
+    {
+        IUnknown* desktop = nullptr;
+        if (FAILED(reinterpret_cast<GetAtFn>(array[4])(
+                desktops, i, kIidVirtualDesktop, reinterpret_cast<void**>(&desktop))) ||
+            !desktop)
+            continue;
+
+        // IVirtualDesktop: GetId is slot 4.
+        void** desktopVtbl = *reinterpret_cast<void***>(desktop);
+        GUID desktopId = {};
+        if (SUCCEEDED(
+                reinterpret_cast<GetIdFn>(desktopVtbl[4])(desktop, &desktopId)) &&
+            IsEqualGUID(desktopId, id))
+        {
+            switched = SUCCEEDED(
+                reinterpret_cast<SwitchFn>(manager[9])(g_vdInternal, desktop));
+        }
+        desktop->Release();
+    }
+
+    desktops->Release();
+    return switched;
+}
+
 static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
 {
     if (g_busy)
@@ -1496,7 +1776,10 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
 
     ReleaseThumbnails();
     g_busy = true;
+    g_pendingDesktopTarget = -1;
+    g_pendingDesktopTries = 0;
 
+    bool direct = false;
     if (create)
     {
         SendChord('D', false);
@@ -1506,16 +1789,25 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
         if (g_desktops.size() > 1)
             SendChord(VK_F4, false);
     }
-    else
+    else if (targetDesktop >= 0 &&
+             targetDesktop < static_cast<int>(g_desktops.size()))
     {
-        const int delta = targetDesktop - g_currentDesktop;
-        const int steps = std::min(std::abs(delta), 8);
-        for (int i = 0; i < steps; i++)
-            SendChord(delta > 0 ? VK_RIGHT : VK_LEFT, true);
+        direct = SwitchDesktopDirect(g_desktops[targetDesktop].id);
+        if (direct)
+        {
+            g_pendingDesktopTarget = targetDesktop;
+        }
+        else
+        {
+            const int delta = targetDesktop - g_currentDesktop;
+            const int steps = std::min(std::abs(delta), 8);
+            for (int i = 0; i < steps; i++)
+                SendChord(delta > 0 ? VK_RIGHT : VK_LEFT, true);
+        }
     }
 
     if (g_overlay)
-        SetTimer(g_overlay, kTimerDesktop, 700, nullptr);
+        SetTimer(g_overlay, kTimerDesktop, direct ? 400 : 700, nullptr);
     InvalidateRect(g_overlay, nullptr, FALSE);
 }
 
@@ -1935,6 +2227,22 @@ static void RenderScene(HDC dc)
         StrokeRound(rect, radius, isSelected ? g_theme.accent : g_theme.text, 1.4f * s,
                     isSelected ? 0.95f : (isHovered ? 0.16f : 0.08f));
 
+        // Held tasks get their own frame and a corner dot, so it is obvious which
+        // windows will follow the user to the next desktop.
+        const UINT32 heldColor =
+            (card.entry >= 0 && card.entry < static_cast<int>(g_windows.size()))
+                ? HeldColorOf(g_windows[card.entry].hwnd)
+                : 0;
+        if (heldColor)
+        {
+            StrokeRound(rect, radius, heldColor, 2.2f * s, 0.95f);
+            g_d2dBrush->SetColor(ColorOf(heldColor, 1.0f));
+            const D2D1_ELLIPSE dot = D2D1::Ellipse(
+                D2D1::Point2F(rect.r - 14.0f * s, rect.b - 14.0f * s), 4.0f * s,
+                4.0f * s);
+            g_d2dTarget->FillEllipse(&dot, g_d2dBrush);
+        }
+
         if (card.entry >= 0 && card.entry < static_cast<int>(g_windows.size()))
         {
             WindowEntry& entry = g_windows[card.entry];
@@ -2114,12 +2422,17 @@ static void RenderScene(HDC dc)
     std::wstring hint;
     if (IsRenamingDesktop())
         hint = L"Rename desktop  \u00B7  Enter save  \u00B7  Esc cancel";
+    else if (g_pendingMove)
+        hint = L"Move to desktop 1\u2013" +
+               std::to_wstring(std::max<size_t>(g_desktops.size(), 1)) +
+               L"  \u00B7  Esc cancel";
     else if (g_focusStrip)
         hint = L"Enter switch  \u00B7  F2 rename  \u00B7  N new  \u00B7  Delete close  "
                L"\u00B7  Ctrl+Left/Right switch  \u00B7  Tab windows";
     else
         hint = L"Enter switch  \u00B7  Delete close  \u00B7  Shift+Left/Right move to "
-               L"desktop  \u00B7  Tab desktops  \u00B7  / search";
+               L"desktop  \u00B7  M move to number  \u00B7  U hold  \u00B7  Tab desktops  "
+               L"\u00B7  / search";
     DrawTextBlock(hint, g_fmtHint, hintRect, g_theme.text, DWRITE_TEXT_ALIGNMENT_LEADING,
                   0.42f);
 
@@ -2168,6 +2481,8 @@ static void StopOverlayTimers()
     KillTimer(g_overlay, kTimerIdle);
     KillTimer(g_overlay, kTimerCaret);
     KillTimer(g_overlay, kTimerDesktop);
+    g_pendingDesktopTarget = -1;
+    g_pendingDesktopTries = 0;
 }
 
 static void ForceForeground(HWND hwnd)
@@ -2401,6 +2716,7 @@ static void ShowOverlay()
     g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
     g_hoverCreate = g_hoverSearch = g_hoverSearchClear = false;
     g_busy = false;
+    g_pendingMove = false;
 
     RefreshDesktops();
     RebuildWindowList();
@@ -2433,6 +2749,9 @@ static void FinishHide()
     g_presence = 0.0f;
     g_targetPresence = 0.0f;
     g_busy = false;
+    g_pendingMove = false;
+    g_pendingDesktopTarget = -1;
+    g_pendingDesktopTries = 0;
     SetControlReady(true);
 }
 
@@ -2688,6 +3007,28 @@ static void OnKeyDown(WPARAM key)
         return;
     }
 
+    // A desktop number follows m; anything else cancels the pending move.
+    if (g_pendingMove)
+    {
+        if (key == VK_ESCAPE)
+        {
+            g_pendingMove = false;
+            InvalidateRect(g_overlay, nullptr, FALSE);
+            return;
+        }
+        if ((key >= '1' && key <= '9') || (key >= VK_NUMPAD1 && key <= VK_NUMPAD9))
+        {
+            const int index = key >= VK_NUMPAD1 ? static_cast<int>(key - VK_NUMPAD1)
+                                                : static_cast<int>(key - '1');
+            g_pendingMove = false;
+            MoveSelectedWindowToDesktopIndex(index);
+            InvalidateRect(g_overlay, nullptr, FALSE);
+            return;
+        }
+        g_pendingMove = false;
+        InvalidateRect(g_overlay, nullptr, FALSE);
+    }
+
     const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
     const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 
@@ -2833,6 +3174,19 @@ static void OnKeyDown(WPARAM key)
     case VK_INSERT:
         if (g_focusStrip)
             BeginDesktopAction(-1, true, false);
+        return;
+
+    case 'U':
+        if (!g_focusStrip)
+            ToggleHold();
+        return;
+
+    case 'M':
+        if (!g_focusStrip)
+        {
+            g_pendingMove = true;
+            InvalidateRect(g_overlay, nullptr, FALSE);
+        }
         return;
 
     default:
@@ -3111,6 +3465,9 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 RebuildFilter();
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
+            PruneHeldTasks();
+            if (g_held.empty())
+                StopHeldWatch();
             return 0;
         }
         if (wParam == kTimerCaret)
@@ -3121,9 +3478,29 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         }
         if (wParam == kTimerDesktop)
         {
+            RefreshDesktops();
+            // A direct switch animates, so the desktop may not have changed yet;
+            // poll briefly before declaring the action finished.
+            if (g_pendingDesktopTarget >= 0 &&
+                g_currentDesktop != g_pendingDesktopTarget &&
+                ++g_pendingDesktopTries < 10)
+            {
+                SetTimer(hwnd, kTimerDesktop, 120, nullptr);
+                return 0;
+            }
+
             KillTimer(hwnd, kTimerDesktop);
             g_busy = false;
-            RefreshDesktops();
+            g_pendingDesktopTarget = -1;
+            g_pendingDesktopTries = 0;
+            // Carry held tasks right away instead of waiting for the watcher.
+            GUID active = {};
+            if (ReadActiveDesktopId(&active))
+            {
+                g_watchedDesktop = active;
+                g_hasWatchedDesktop = true;
+                MoveHeldTasksToDesktop(active, false);
+            }
             RebuildWindowList();
             g_desktopSelected = g_currentDesktop;
             InvalidateRect(hwnd, nullptr, FALSE);
@@ -3142,6 +3519,21 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 static LRESULT CALLBACK ControlWndProc(HWND hwnd, UINT message, WPARAM wParam,
                                        LPARAM lParam)
 {
+    if (message == WM_TIMER && wParam == kTimerHeldWatch)
+    {
+        // Carry held tasks across whenever the active desktop changes.
+        GUID id = {};
+        if (ReadActiveDesktopId(&id) &&
+            (!g_hasWatchedDesktop || !IsEqualGUID(id, g_watchedDesktop)))
+        {
+            g_watchedDesktop = id;
+            g_hasWatchedDesktop = true;
+            MoveHeldTasksToDesktop(id);
+        }
+        if (g_held.empty())
+            StopHeldWatch();
+        return 0;
+    }
     if (g_hotkeyMessage != 0 && message == g_hotkeyMessage &&
         wParam == kHotkeyFlagWinTab)
     {
@@ -3266,10 +3658,18 @@ static void ShutdownUi()
         g_vdm->Release();
         g_vdm = nullptr;
     }
+    if (g_vdInternal)
+    {
+        g_vdInternal->Release();
+        g_vdInternal = nullptr;
+    }
+    g_vdInternalResolved = false;
 
     g_windows.clear();
     g_filtered.clear();
     g_desktops.clear();
+    g_held.clear();
+    g_heldWatchOn = false;
     CoUninitialize();
 }
 

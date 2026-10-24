@@ -162,11 +162,25 @@ Desktop data comes from:
   desktop, with `CurrentVirtualDesktop` as a fallback,
 - `IVirtualDesktopManager::IsWindowOnCurrentVirtualDesktop` for filtering.
 
-Switching, creating and closing desktops use the same system hotkeys a user
-would press (`Win` + `Ctrl` + `Left`/`Right`/`D`/`F4`) injected with
-`SendInput`. After an action the overlay shows a short busy state, waits for the
-shell to settle, and re-enumerates windows and desktops. This avoids relying on
-undocumented desktop COM interfaces whose vtable changes between Windows builds.
+Switching a desktop calls the shell's internal
+`IVirtualDesktopManagerInternal` (obtained from `CLSID_ImmersiveShell` through
+`IServiceProvider::QueryService`) so that clicking any desktop pill jumps
+straight to it instead of stepping through the desktops in between. Only
+`GetDesktops` (vtable slot 7), `IObjectArray::GetAt` (slot 4),
+`IVirtualDesktop::GetId` (slot 4) and `SwitchDesktop` (slot 9) are used; those
+slots sit before the per-build additions of the interface, and the interface id
+has been stable on Windows 11 since 21H2. The shell animates the switch, so the
+overlay keeps its busy state and polls its own desktop id (up to roughly 1.2 s)
+before re-enumerating. If the internal interface cannot be created, switching
+falls back to injected `Win` + `Ctrl` + `Left`/`Right` chords. Creating and
+closing desktops still use injected `Win` + `Ctrl` + `D` / `F4`.
+
+Held tasks (`U`) are stored in `g_held` as window handle plus colour. A 200 ms
+timer on the message-only control window reads `CurrentVirtualDesktop`; when it
+changes, each held window is moved with `MoveWindowToDesktop`, so a held task
+follows the user even while the overview is closed. After an in-overview switch
+the same carry happens immediately from the desktop timer, and handles that
+closed in the meantime are pruned.
 
 Desktop names are read from
 `HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name` and written back to the
@@ -203,7 +217,9 @@ box looked empty. Every `Win` + `Tab` now opens on the full, unfiltered list.
 Vim navigation (`h` `j` `k` `l`, `/`, `x`) is gated on `Behavior.VimNavigation`.
 Unmodified arrow keys keep their original meaning; `Ctrl` + `Left`/`Right`
 switches desktops and `Shift` + `Left`/`Right` moves the selected window to an
-adjacent desktop.
+adjacent desktop. `M` sets `g_pendingMove`; the next `1`-`9` moves the selected
+window to that desktop index and any other key cancels. `U` toggles the hold on
+the selected window, and held cards are framed in their hold colour.
 
 Activating a window hides the overlay immediately (no reverse animation) and
 then restores and foregrounds the target. Closing a window posts `WM_CLOSE`,
