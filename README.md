@@ -25,6 +25,8 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Rename virtual desktops inline (saved the same way Windows stores them)
 - Move a window to another virtual desktop without leaving the overview
 - Vim-style navigation (`h` `j` `k` `l`, `/`, `x`)
+- Color themes with a built-in Catppuccin set (Mocha, Macchiato, Frappe, Latte),
+  Nord, Dracula, Tokyo Night, Gruvbox and Rose Pine
 - Customizable background: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent,
   with a configurable tint color and opacity
 - Keyboard and mouse navigation
@@ -77,9 +79,10 @@ contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
 
 | Setting | Description |
 | ------- | ----------- |
-| Accent color | Accent color used for highlights, in `#RRGGBB` format |
+| Theme | Color palette for the whole overlay (Custom, Catppuccin, Nord, ...) |
+| Accent color | Accent color used for highlights, in `#RRGGBB` format (Custom theme) |
 | Background | Backdrop effect: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent |
-| Background color | Tint color of the overview panel, in `#RRGGBB` format |
+| Background color | Tint color of the overview panel, in `#RRGGBB` format (Custom theme) |
 | Background opacity | How strong the panel tint is over the backdrop (`0`-`100`) |
 | Show window icons | Show each window's application icon in its card header |
 | Animation speed | Relative speed of the open and close animations |
@@ -103,6 +106,30 @@ so **Background opacity** works the same way in every mode: `0` is fully
 transparent (just the blur or desktop) and `100` is fully opaque. On an opaque
 mode such as Solid the setting has no visible effect. Lower it to let more of
 the backdrop show through.
+
+**Theme** recolors the entire overlay, not just the accent: the panel tint, the
+card and desktop-strip surfaces, the text and the highlight all change together,
+so light themes such as Catppuccin Latte stay readable. The built-in palettes
+are:
+
+- **Custom** (default) – uses the **Accent color** and **Background color**
+  pickers above
+- **Catppuccin Mocha**, **Macchiato**, **Frappe**, **Latte**
+- **Nord**
+- **Dracula**
+- **Tokyo Night**
+- **Gruvbox Dark**
+- **Rose Pine**
+
+Theme and **Background** are independent: pick, for example, Catppuccin Mocha
+and keep Acrylic, or switch to a light theme with Mica. **Background opacity**
+still controls how strongly the panel tint covers the backdrop in every theme.
+
+## Search
+
+Press `/` or click the field to focus the search, then type to filter windows by
+title or application. The query is cleared every time the overview opens, so a
+new `Win` + `Tab` always starts from the full window list.
 
 ## How it works
 

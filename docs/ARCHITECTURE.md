@@ -103,6 +103,25 @@ opacity for every mode through one linear control. The scrim's alpha is verified
 to composite correctly over both the acrylic blur and the Mica material. If DWM
 glass is unavailable the scrim is forced nearly opaque as a fallback.
 
+### Palettes
+
+Every color the renderer uses lives in a single `ThemeColors` struct (panel tint,
+accent, text, card / strip / pill surfaces, preview fill, "on accent" text and
+the close-button red). `ResolveTheme()` fills it from the selected `Appearance.Theme`:
+
+- `Custom` maps the `AccentColor` / `BackgroundColor` settings onto the original
+  dark surfaces, so the default look is byte-for-byte unchanged.
+- Named palettes (Catppuccin Mocha / Macchiato / Frappe / Latte, Nord, Dracula,
+  Tokyo Night, Gruvbox, Rose Pine) are built by `BuildTheme()` from a handful of
+  base colors. Hover, selected and active surfaces are derived with a linear
+  `MixColor()` toward the text or accent color, so a new palette needs only six
+  values. A `light` flag flips the hover direction (darken instead of lighten)
+  and the preview fill, which keeps light themes such as Catppuccin Latte
+  readable.
+
+The renderer reads `g_theme` everywhere instead of literals, so the selected
+palette and the backdrop effect stay independent.
+
 ## 4. Window list
 
 `EnumWindows` collects candidates and filters:
@@ -160,6 +179,12 @@ Until then `WM_CHAR` only routes the navigation keys (`h` `j` `k` `l` `x`), so a
 query that contains those letters can never collide with a command. While the
 field is focused, `OnKeyDown` handles only `Esc`, `Enter` and `Backspace` so that
 keys such as `Delete` or `N` cannot trigger an action mid-query.
+
+`ShowOverlay` clears the transient state (query, page, selection, focus, rename,
+hover) *before* it calls `RebuildWindowList`. That order matters: the rebuild
+filters the window list with the current `g_search`, so clearing the query
+afterwards would leave the list filtered by the previous query while the search
+box looked empty. Every `Win` + `Tab` now opens on the full, unfiltered list.
 
 Vim navigation (`h` `j` `k` `l`, `/`, `x`) is gated on `Behavior.VimNavigation`.
 Unmodified arrow keys keep their original meaning; `Ctrl` + `Left`/`Right`

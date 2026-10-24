@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWin Tab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.2.1
+// @version         0.2.2
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -40,6 +40,8 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Rename virtual desktops inline (saved the same way Windows stores them)
 - Move a window to another virtual desktop without leaving the overview
 - Vim-style navigation (`h` `j` `k` `l`, `/`, `x`)
+- Color themes with a built-in Catppuccin set (Mocha, Macchiato, Frappe, Latte),
+  Nord, Dracula, Tokyo Night, Gruvbox and Rose Pine
 - Customizable background: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent,
   with a configurable tint color and opacity
 - Keyboard and mouse navigation
@@ -92,9 +94,10 @@ contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
 
 | Setting | Description |
 | ------- | ----------- |
-| Accent color | Accent color used for highlights, in `#RRGGBB` format |
+| Theme | Color palette for the whole overlay (Custom, Catppuccin, Nord, ...) |
+| Accent color | Accent color used for highlights, in `#RRGGBB` format (Custom theme) |
 | Background | Backdrop effect: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent |
-| Background color | Tint color of the overview panel, in `#RRGGBB` format |
+| Background color | Tint color of the overview panel, in `#RRGGBB` format (Custom theme) |
 | Background opacity | How strong the panel tint is over the backdrop (`0`-`100`) |
 | Show window icons | Show each window's application icon in its card header |
 | Animation speed | Relative speed of the open and close animations |
@@ -118,6 +121,30 @@ so **Background opacity** works the same way in every mode: `0` is fully
 transparent (just the blur or desktop) and `100` is fully opaque. On an opaque
 mode such as Solid the setting has no visible effect. Lower it to let more of
 the backdrop show through.
+
+**Theme** recolors the entire overlay, not just the accent: the panel tint, the
+card and desktop-strip surfaces, the text and the highlight all change together,
+so light themes such as Catppuccin Latte stay readable. The built-in palettes
+are:
+
+- **Custom** (default) – uses the **Accent color** and **Background color**
+  pickers above
+- **Catppuccin Mocha**, **Macchiato**, **Frappe**, **Latte**
+- **Nord**
+- **Dracula**
+- **Tokyo Night**
+- **Gruvbox Dark**
+- **Rose Pine**
+
+Theme and **Background** are independent: pick, for example, Catppuccin Mocha
+and keep Acrylic, or switch to a light theme with Mica. **Background opacity**
+still controls how strongly the panel tint covers the backdrop in every theme.
+
+## Search
+
+Press `/` or click the field to focus the search, then type to filter windows by
+title or application. The query is cleared every time the overview opens, so a
+new `Win` + `Tab` always starts from the full window list.
 
 ## How it works
 
@@ -181,9 +208,23 @@ OverhauldedWin Tab is a pre-release project.
 // ==WindhawkModSettings==
 /*
 - Appearance:
+    - Theme: "custom"
+      $name: Theme
+      $description: Color palette for the whole overlay. "Custom" uses the accent and background colors below.
+      $options:
+      - "custom": Custom
+      - "catppuccin-mocha": Catppuccin Mocha
+      - "catppuccin-macchiato": Catppuccin Macchiato
+      - "catppuccin-frappe": Catppuccin Frappe
+      - "catppuccin-latte": Catppuccin Latte
+      - "nord": Nord
+      - "dracula": Dracula
+      - "tokyo-night": Tokyo Night
+      - "gruvbox": Gruvbox Dark
+      - "rose-pine": Rose Pine
     - AccentColor: "#4CC2FF"
       $name: Accent color
-      $description: Accent color used for highlights, in #RRGGBB format.
+      $description: Accent color used for highlights, in #RRGGBB format. Used by the "Custom" theme.
     - Background: "acrylic"
       $name: Background
       $description: Backdrop effect. Acrylic and Blur are live blurs; Mica is a flat, wallpaper-tinted surface.
@@ -196,7 +237,7 @@ OverhauldedWin Tab is a pre-release project.
       - "none": Transparent
     - BackgroundColor: "#0A0D12"
       $name: Background color
-      $description: Tint color of the overview panel, in #RRGGBB format.
+      $description: Tint color of the overview panel, in #RRGGBB format. Used by the "Custom" theme.
     - BackgroundOpacity: 70
       $name: Background opacity
       $description: Strength of the panel tint drawn over the backdrop (0-100). 0 leaves the backdrop untouched, 100 is fully opaque.
@@ -516,6 +557,150 @@ static volatile LONG g_uiInitOk = 0;
 ////////////////////////////////////////////////////////////////////////////////
 // SETTINGS
 
+////////////////////////////////////////////////////////////////////////////////
+// THEME
+
+enum class Palette
+{
+    Custom,
+    CatppuccinMocha,
+    CatppuccinMacchiato,
+    CatppuccinFrappe,
+    CatppuccinLatte,
+    Nord,
+    Dracula,
+    TokyoNight,
+    Gruvbox,
+    RosePine,
+};
+
+// Every color the renderer needs, as 0xAARRGGBB.
+struct ThemeColors
+{
+    UINT32 background;
+    UINT32 accent;
+    UINT32 text;
+    UINT32 cardFill;
+    UINT32 cardHover;
+    UINT32 cardSelected;
+    UINT32 previewFill;
+    UINT32 searchFill;
+    UINT32 stripFill;
+    UINT32 pillFill;
+    UINT32 pillHover;
+    UINT32 pillActive;
+    UINT32 pillActiveHover;
+    UINT32 onAccent;
+    UINT32 danger;
+};
+
+static Palette g_palette = Palette::Custom;
+static ThemeColors g_theme = {};
+
+// Linear blend between two 0xAARRGGBB colors; t = 0 keeps `a`, t = 1 gives `b`.
+static UINT32 MixColor(UINT32 a, UINT32 b, float t)
+{
+    const float k = std::max(0.0f, std::min(1.0f, t));
+    auto channel = [k](unsigned int x, unsigned int y) {
+        return static_cast<UINT32>(std::lround(x + (static_cast<float>(y) - x) * k)) & 0xFF;
+    };
+    return (channel((a >> 24) & 0xFF, (b >> 24) & 0xFF) << 24) |
+           (channel((a >> 16) & 0xFF, (b >> 16) & 0xFF) << 16) |
+           (channel((a >> 8) & 0xFF, (b >> 8) & 0xFF) << 8) |
+           channel(a & 0xFF, b & 0xFF);
+}
+
+// Builds a full palette from a few base colors; the hover and selection fills are
+// derived so that every theme stays coherent without listing every shade.
+static ThemeColors BuildTheme(UINT32 background, UINT32 surface, UINT32 text, UINT32 accent,
+                              UINT32 onAccent, UINT32 danger, bool light)
+{
+    ThemeColors t = {};
+    t.background = background;
+    t.accent = accent;
+    t.text = text;
+    t.cardFill = surface;
+    t.cardHover = MixColor(surface, text, light ? 0.06f : 0.05f);
+    t.cardSelected = MixColor(surface, accent, 0.14f);
+    t.previewFill = MixColor(surface, light ? 0xFFFFFFFF : 0xFF000000, light ? 0.06f : 0.55f);
+    t.searchFill = MixColor(surface, text, light ? 0.05f : 0.06f);
+    t.stripFill = surface;
+    t.pillFill = MixColor(surface, text, light ? 0.05f : 0.03f);
+    t.pillHover = MixColor(surface, text, light ? 0.09f : 0.07f);
+    t.pillActive = MixColor(surface, accent, 0.16f);
+    t.pillActiveHover = MixColor(surface, accent, 0.24f);
+    t.onAccent = onAccent;
+    t.danger = danger;
+    return t;
+}
+
+static void ResolveTheme()
+{
+    switch (g_palette)
+    {
+    case Palette::CatppuccinMocha:
+        g_theme = BuildTheme(0xFF1E1E2E, 0xFF181825, 0xFFCDD6F4, 0xFFCBA6F7, 0xFF11111B,
+                             0xFFF38BA8, false);
+        break;
+    case Palette::CatppuccinMacchiato:
+        g_theme = BuildTheme(0xFF24273A, 0xFF1E2030, 0xFFCAD3F5, 0xFFC6A0F6, 0xFF181926,
+                             0xFFED8796, false);
+        break;
+    case Palette::CatppuccinFrappe:
+        g_theme = BuildTheme(0xFF303446, 0xFF292C3C, 0xFFC6D0F5, 0xFFCA9EE6, 0xFF232634,
+                             0xFFE78284, false);
+        break;
+    case Palette::CatppuccinLatte:
+        g_theme = BuildTheme(0xFFEFF1F5, 0xFFE6E9EF, 0xFF4C4F69, 0xFF8839EF, 0xFFFFFFFF,
+                             0xFFD20F39, true);
+        break;
+    case Palette::Nord:
+        g_theme = BuildTheme(0xFF2E3440, 0xFF3B4252, 0xFFD8DEE9, 0xFF88C0D0, 0xFF2E3440,
+                             0xFFBF616A, false);
+        break;
+    case Palette::Dracula:
+        g_theme = BuildTheme(0xFF282A36, 0xFF343746, 0xFFF8F8F2, 0xFFBD93F9, 0xFF282A36,
+                             0xFFFF5555, false);
+        break;
+    case Palette::TokyoNight:
+        g_theme = BuildTheme(0xFF1A1B26, 0xFF24283B, 0xFFC0CAF5, 0xFF7AA2F7, 0xFF1A1B26,
+                             0xFFF7768E, false);
+        break;
+    case Palette::Gruvbox:
+        g_theme = BuildTheme(0xFF282828, 0xFF32302F, 0xFFEBDBB2, 0xFFFABD2F, 0xFF282828,
+                             0xFFFB4934, false);
+        break;
+    case Palette::RosePine:
+        g_theme = BuildTheme(0xFF191724, 0xFF1F1D2E, 0xFFE0DEF4, 0xFFC4A7E7, 0xFF191724,
+                             0xFFEB6F92, false);
+        break;
+    case Palette::Custom:
+    default:
+    {
+        // The accent and background pickers, with the original dark surfaces so
+        // the custom palette renders exactly as it always has.
+        ThemeColors t = {};
+        t.background = g_backgroundColor;
+        t.accent = g_accent;
+        t.text = 0xFFFFFFFF;
+        t.cardFill = 0xFF0B0E14;
+        t.cardHover = 0xFF11151D;
+        t.cardSelected = 0xFF141A24;
+        t.previewFill = 0xFF04060A;
+        t.searchFill = 0xFF141821;
+        t.stripFill = 0xFF0B0E14;
+        t.pillFill = 0xFF12151C;
+        t.pillHover = 0xFF181D26;
+        t.pillActive = 0xFF1B2432;
+        t.pillActiveHover = 0xFF223046;
+        t.onAccent = 0xFF06121C;
+        t.danger = 0xFFE81123;
+        g_theme = t;
+        break;
+    }
+    }
+}
+
 static void LoadSettings()
 {
     auto read = [](PCWSTR key) {
@@ -580,6 +765,19 @@ static void LoadSettings()
     g_closeOnFocusLoss = Wh_GetIntSetting(L"Behavior.CloseOnFocusLoss") != 0;
     g_wrapNavigation = Wh_GetIntSetting(L"Behavior.WrapNavigation") != 0;
     g_vimNavigation = Wh_GetIntSetting(L"Behavior.VimNavigation") != 0;
+
+    const std::wstring theme = read(L"Appearance.Theme");
+    g_palette = theme == L"catppuccin-mocha" ? Palette::CatppuccinMocha
+              : theme == L"catppuccin-macchiato" ? Palette::CatppuccinMacchiato
+              : theme == L"catppuccin-frappe" ? Palette::CatppuccinFrappe
+              : theme == L"catppuccin-latte" ? Palette::CatppuccinLatte
+              : theme == L"nord" ? Palette::Nord
+              : theme == L"dracula" ? Palette::Dracula
+              : theme == L"tokyo-night" ? Palette::TokyoNight
+              : theme == L"gruvbox" ? Palette::Gruvbox
+              : theme == L"rose-pine" ? Palette::RosePine
+              : Palette::Custom;
+    ResolveTheme();
 }
 
 static float AnimationSeconds(float baseSeconds)
@@ -1653,24 +1851,25 @@ static void RenderScene(HDC dc)
     const RectF full = {0.0f, 0.0f, g_layout.w, g_layout.h};
     const float baseScrim = BackgroundScrimAlpha();
     if (baseScrim > 0.001f)
-        FillRound(full, 0.0f, g_backgroundColor, baseScrim);
+        FillRound(full, 0.0f, g_theme.background, baseScrim);
 
     // Header title.
     const RectF titleRect = {56.0f * s, 40.0f * s, 340.0f * s, 40.0f * s + 46.0f * s};
-    DrawTextBlock(L"Task View", g_fmtTitle, titleRect, 0xFFFFFFFF,
+    DrawTextBlock(L"Task View", g_fmtTitle, titleRect, g_theme.text,
                   DWRITE_TEXT_ALIGNMENT_LEADING, 0.92f);
 
     // Search field.
     const float searchRadius = g_layout.search.H() / 2.0f;
-    FillRound(g_layout.search, searchRadius, 0xFF141821, 0.95f);
-    StrokeRound(g_layout.search, searchRadius, g_searchFocused ? g_accent : 0xFFFFFFFF,
-                1.25f * s, g_searchFocused ? 0.85f : 0.10f);
+    FillRound(g_layout.search, searchRadius, g_theme.searchFill, 0.95f);
+    StrokeRound(g_layout.search, searchRadius,
+                g_searchFocused ? g_theme.accent : g_theme.text, 1.25f * s,
+                g_searchFocused ? 0.85f : 0.10f);
 
     // Magnifier glyph.
     {
         const float glyphX = g_layout.search.l + 22.0f * s;
         const float glyphY = g_layout.search.t + g_layout.search.H() / 2.0f;
-        g_d2dBrush->SetColor(ColorOf(0xFFFFFFFF, 0.55f));
+        g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.55f));
         const D2D1_ELLIPSE circle =
             D2D1::Ellipse(D2D1::Point2F(glyphX, glyphY - 1.0f * s), 6.0f * s, 6.0f * s);
         g_d2dTarget->DrawEllipse(&circle, g_d2dBrush, 1.4f * s);
@@ -1684,14 +1883,14 @@ static void RenderScene(HDC dc)
     const RectF searchTextRect = {textLeft, g_layout.search.t, textRight, g_layout.search.b};
     if (g_search.empty())
     {
-        DrawTextBlock(L"Search windows", g_fmtSearch, searchTextRect, 0xFFFFFFFF,
+        DrawTextBlock(L"Search windows", g_fmtSearch, searchTextRect, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_LEADING, 0.40f);
     }
     else
     {
-        DrawTextBlock(g_search, g_fmtSearch, searchTextRect, 0xFFFFFFFF,
+        DrawTextBlock(g_search, g_fmtSearch, searchTextRect, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_LEADING, 0.96f);
-        g_d2dBrush->SetColor(ColorOf(0xFFFFFFFF, g_hoverSearchClear ? 0.85f : 0.45f));
+        g_d2dBrush->SetColor(ColorOf(g_theme.text, g_hoverSearchClear ? 0.85f : 0.45f));
         const float ccx = g_searchClearRect.l + g_searchClearRect.W() / 2.0f;
         const float ccy = g_searchClearRect.t + g_searchClearRect.H() / 2.0f;
         const float arm = 5.0f * s;
@@ -1704,9 +1903,9 @@ static void RenderScene(HDC dc)
     // Caret.
     if (g_searchFocused && ((GetTickCount64() / 530) % 2) == 0)
     {
-        const float approx = static_cast<float>(g_search.size()) * 8.2f * s;
-        const float caretX = std::min(textRight, textLeft + approx + 1.0f * s);
-        g_d2dBrush->SetColor(ColorOf(0xFFFFFFFF, 0.85f));
+        const float textW = MeasureTextWidth(g_search, g_fmtSearch);
+        const float caretX = std::min(textRight, textLeft + textW + 1.0f * s);
+        g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.85f));
         g_d2dTarget->DrawLine(D2D1::Point2F(caretX, g_layout.search.t + 12.0f * s),
                               D2D1::Point2F(caretX, g_layout.search.b - 12.0f * s),
                               g_d2dBrush, 1.4f * s);
@@ -1728,9 +1927,10 @@ static void RenderScene(HDC dc)
         const RectF shadow = {rect.l, rect.t + 5.0f * s, rect.r, rect.b + 7.0f * s};
         FillRound(shadow, radius + 2.0f * s, 0xFF000000, 0.28f);
 
-        const UINT32 fill = isSelected ? 0xFF141A24 : (isHovered ? 0xFF11151D : 0xFF0B0E14);
+        const UINT32 fill =
+            isSelected ? g_theme.cardSelected : (isHovered ? g_theme.cardHover : g_theme.cardFill);
         FillRound(rect, radius, fill, 1.0f);
-        StrokeRound(rect, radius, isSelected ? g_accent : 0xFFFFFFFF, 1.4f * s,
+        StrokeRound(rect, radius, isSelected ? g_theme.accent : g_theme.text, 1.4f * s,
                     isSelected ? 0.95f : (isHovered ? 0.16f : 0.08f));
 
         if (card.entry >= 0 && card.entry < static_cast<int>(g_windows.size()))
@@ -1776,13 +1976,13 @@ static void RenderScene(HDC dc)
             const RectF titleRect = {textX, header.t,
                                      header.r - (g_hoverClose == i ? 34.0f * s : 12.0f * s),
                                      header.b};
-            DrawTextBlock(entry.title, g_fmtCard, titleRect, 0xFFFFFFFF,
+            DrawTextBlock(entry.title, g_fmtCard, titleRect, g_theme.text,
                           DWRITE_TEXT_ALIGNMENT_LEADING, 0.94f);
 
             // Close button: header only, never over the DWM preview.
             if (g_hoverClose == i)
             {
-                FillRound(closeRect, 5.0f * s, 0xFFE81123, 0.9f);
+                FillRound(closeRect, 5.0f * s, g_theme.danger, 0.9f);
                 g_d2dBrush->SetColor(ColorOf(0xFFFFFFFF, 0.95f));
                 const float arm = 4.6f * s;
                 const float bcx = closeRect.l + closeRect.W() / 2.0f;
@@ -1796,8 +1996,8 @@ static void RenderScene(HDC dc)
             }
 
             // Preview frame; the DWM thumbnail is composed on top of it.
-            FillRound(preview, 6.0f * s, 0xFF04060A, 1.0f);
-            StrokeRound(preview, 6.0f * s, 0xFFFFFFFF, 1.0f * s, 0.07f);
+            FillRound(preview, 6.0f * s, g_theme.previewFill, 1.0f);
+            StrokeRound(preview, 6.0f * s, g_theme.text, 1.0f * s, 0.07f);
         }
     }
 
@@ -1807,7 +2007,7 @@ static void RenderScene(HDC dc)
         const std::wstring message = g_search.empty()
             ? L"No windows on this desktop"
             : L"No windows match your search";
-        DrawTextBlock(message, g_fmtEmpty, g_layout.grid, 0xFFFFFFFF,
+        DrawTextBlock(message, g_fmtEmpty, g_layout.grid, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_CENTER, 0.55f);
     }
 
@@ -1819,13 +2019,13 @@ static void RenderScene(HDC dc)
         const RectF pageRect = {g_layout.grid.r - 200.0f * s,
                                 g_layout.grid.b + 4.0f * s, g_layout.grid.r,
                                 g_layout.grid.b + 30.0f * s};
-        DrawTextBlock(page, g_fmtHint, pageRect, 0xFFFFFFFF,
+        DrawTextBlock(page, g_fmtHint, pageRect, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_TRAILING, 0.55f);
     }
 
     // Desktop strip.
-    FillRound(g_layout.strip, 14.0f * s, 0xFF0B0E14, 0.90f);
-    StrokeRound(g_layout.strip, 14.0f * s, 0xFFFFFFFF, 1.0f * s, 0.07f);
+    FillRound(g_layout.strip, 14.0f * s, g_theme.stripFill, 0.90f);
+    StrokeRound(g_layout.strip, 14.0f * s, g_theme.text, 1.0f * s, 0.07f);
 
     for (int i = 0; i < static_cast<int>(g_pills.size()); i++)
     {
@@ -1834,24 +2034,25 @@ static void RenderScene(HDC dc)
         const bool hovered = g_hoverPill == i;
         const bool selected = g_focusStrip && pill.desktop == g_desktopSelected;
 
-        UINT32 fill = active ? 0xFF1B2432 : 0xFF12151C;
+        UINT32 fill = active ? g_theme.pillActive : g_theme.pillFill;
         if (hovered)
-            fill = active ? 0xFF223046 : 0xFF181D26;
+            fill = active ? g_theme.pillActiveHover : g_theme.pillHover;
         FillRound(pill.rect, 10.0f * s, fill, 1.0f);
 
         if (selected)
-            StrokeRound(pill.rect, 10.0f * s, g_accent, 2.0f * s, 0.95f);
+            StrokeRound(pill.rect, 10.0f * s, g_theme.accent, 2.0f * s, 0.95f);
         else
-            StrokeRound(pill.rect, 10.0f * s, active ? g_accent : 0xFFFFFFFF,
-                        1.2f * s, active ? 0.75f : 0.08f);
+            StrokeRound(pill.rect, 10.0f * s,
+                        active ? g_theme.accent : g_theme.text, 1.2f * s,
+                        active ? 0.75f : 0.08f);
 
         const RectF badge = {pill.rect.l + 10.0f * s, pill.rect.t + 9.0f * s,
                              pill.rect.l + 34.0f * s, pill.rect.b - 9.0f * s};
-        FillRound(badge, 6.0f * s, active ? g_accent : 0xFFFFFFFF,
+        FillRound(badge, 6.0f * s, active ? g_theme.accent : g_theme.text,
                   active ? 0.9f : 0.12f);
         DrawTextBlock(std::to_wstring(pill.desktop + 1), g_fmtPill, badge,
-                      active ? 0xFF06121C : 0xFFFFFFFF, DWRITE_TEXT_ALIGNMENT_CENTER,
-                      0.95f);
+                      active ? g_theme.onAccent : g_theme.text,
+                      DWRITE_TEXT_ALIGNMENT_CENTER, 0.95f);
 
         const bool renaming = g_renameDesktop == pill.desktop;
         const RectF nameRect = {pill.rect.l + 40.0f * s, pill.rect.t,
@@ -1860,7 +2061,7 @@ static void RenderScene(HDC dc)
                                 pill.rect.b};
         const std::wstring& shownName =
             renaming ? g_renameText : g_desktops[pill.desktop].name;
-        DrawTextBlock(shownName, g_fmtPill, nameRect, 0xFFFFFFFF,
+        DrawTextBlock(shownName, g_fmtPill, nameRect, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_LEADING,
                       (active || renaming) ? 0.95f : 0.72f);
 
@@ -1868,7 +2069,7 @@ static void RenderScene(HDC dc)
         {
             const float textW = MeasureTextWidth(g_renameText, g_fmtPill);
             const float caretX = std::min(nameRect.r, nameRect.l + textW + 1.0f * s);
-            g_d2dBrush->SetColor(ColorOf(0xFFFFFFFF, 0.85f));
+            g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.85f));
             g_d2dTarget->DrawLine(D2D1::Point2F(caretX, pill.rect.t + 11.0f * s),
                                   D2D1::Point2F(caretX, pill.rect.b - 11.0f * s),
                                   g_d2dBrush, 1.4f * s);
@@ -1877,7 +2078,7 @@ static void RenderScene(HDC dc)
         if (pill.hasClose && !renaming)
         {
             g_d2dBrush->SetColor(
-                ColorOf(0xFFFFFFFF, g_hoverPillClose == i ? 0.95f : 0.45f));
+                ColorOf(g_theme.text, g_hoverPillClose == i ? 0.95f : 0.45f));
             const float ccx = pill.closeRect.l + pill.closeRect.W() / 2.0f;
             const float ccy = pill.closeRect.t + pill.closeRect.H() / 2.0f;
             const float arm = 4.4f * s;
@@ -1891,10 +2092,11 @@ static void RenderScene(HDC dc)
     }
 
     // Create-desktop button.
-    FillRound(g_createRect, 10.0f * s, g_hoverCreate ? 0xFF1B2432 : 0xFF12151C, 1.0f);
-    StrokeRound(g_createRect, 10.0f * s, 0xFFFFFFFF, 1.2f * s, 0.10f);
+    FillRound(g_createRect, 10.0f * s,
+              g_hoverCreate ? g_theme.pillActive : g_theme.pillFill, 1.0f);
+    StrokeRound(g_createRect, 10.0f * s, g_theme.text, 1.2f * s, 0.10f);
     {
-        g_d2dBrush->SetColor(ColorOf(0xFFFFFFFF, 0.80f));
+        g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.80f));
         const float pcx = g_createRect.l + g_createRect.W() / 2.0f;
         const float pcy = g_createRect.t + g_createRect.H() / 2.0f;
         const float arm = 7.0f * s;
@@ -1916,7 +2118,7 @@ static void RenderScene(HDC dc)
     else
         hint = L"Enter switch  \u00B7  Delete close  \u00B7  Shift+Left/Right move to "
                L"desktop  \u00B7  Tab desktops  \u00B7  / search";
-    DrawTextBlock(hint, g_fmtHint, hintRect, 0xFFFFFFFF, DWRITE_TEXT_ALIGNMENT_LEADING,
+    DrawTextBlock(hint, g_fmtHint, hintRect, g_theme.text, DWRITE_TEXT_ALIGNMENT_LEADING,
                   0.42f);
 
     // Busy indicator (desktop switching).
@@ -1930,7 +2132,7 @@ static void RenderScene(HDC dc)
             const float angle = (static_cast<float>(i) / 8.0f) * 6.2831853f;
             const float alpha =
                 0.15f + 0.85f * std::fmod(phase + static_cast<float>(i) / 8.0f, 1.0f);
-            g_d2dBrush->SetColor(ColorOf(g_accent, alpha));
+            g_d2dBrush->SetColor(ColorOf(g_theme.accent, alpha));
             const D2D1_ELLIPSE dot = D2D1::Ellipse(
                 D2D1::Point2F(pcx + std::cos(angle) * 20.0f * s,
                               pcy + std::sin(angle) * 20.0f * s),
@@ -2140,7 +2342,7 @@ static void ApplyBackdrop(HWND hwnd)
 
     Wh_Log(L"Backdrop applied: mode=%d opacity=%.2f color=0x%08X glass=%d scrim=%.2f "
            L"blur=%d accent=%d backdropHr=0x%08lX",
-           static_cast<int>(g_backgroundMode), g_backgroundOpacity, g_backgroundColor,
+           static_cast<int>(g_backgroundMode), g_backgroundOpacity, g_theme.background,
            g_glass ? 1 : 0, BackgroundScrimAlpha(), blurOk ? 1 : 0, accentOk ? 1 : 0,
            static_cast<unsigned long>(backdropHr));
 }
@@ -2180,12 +2382,12 @@ static void ShowOverlay()
     UpdateMonitorForWindow(g_originWindow);
     ApplyBackdrop(g_overlay);
 
-    RefreshDesktops();
-    RebuildWindowList();
+    // Reset transient UI state *before* rebuilding: RebuildWindowList() filters
+    // the window list with the current g_search, so clearing it afterwards
+    // would keep showing results for the previous query.
     g_selected = 0;
     g_page = 0;
     g_focusStrip = false;
-    g_desktopSelected = g_currentDesktop;
     g_search.clear();
     g_searchFocused = false;
     g_renameDesktop = -1;
@@ -2193,6 +2395,10 @@ static void ShowOverlay()
     g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
     g_hoverCreate = g_hoverSearch = g_hoverSearchClear = false;
     g_busy = false;
+
+    RefreshDesktops();
+    RebuildWindowList();
+    g_desktopSelected = g_currentDesktop;
 
     g_presence = 0.0f;
     g_targetPresence = 1.0f;
