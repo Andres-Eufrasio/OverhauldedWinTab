@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWin Tab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.3.0
+// @version         0.3.1
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -41,6 +41,8 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Rename virtual desktops inline (saved the same way Windows stores them)
 - Move a window to another virtual desktop without leaving the overview
 - Hold a window with `U` so it follows you to every desktop you switch to
+- Jump straight to a desktop with `1`-`9`, or move the selected window there
+  with `Shift` + `1`-`9`
 - Vim-style navigation (`h` `j` `k` `l`, `/`, `x`)
 - Color themes with a built-in Catppuccin set (Mocha, Macchiato, Frappe, Latte),
   Nord, Dracula, Tokyo Night, Gruvbox and Rose Pine
@@ -75,6 +77,8 @@ opens immediately instead of building the interface from scratch every time.
 | `Ctrl` + `Left` / `Right` | Switch to the previous / next virtual desktop |
 | `Shift` + `Left` / `Right` | Move the selected window to the previous / next desktop |
 | `M` then `1`-`9` | Move the selected window to that numbered desktop |
+| `1`-`9` | Jump to that numbered virtual desktop |
+| `Shift` + `1`-`9` | Move the selected window to that numbered desktop |
 | `U` | Hold or release the selected window; held windows follow you across desktops |
 | `F2` | Rename the selected (or current) virtual desktop |
 | `N` | Create a new virtual desktop (strip focused) |
@@ -164,15 +168,16 @@ The mod runs in two places:
 
 Virtual desktop names are written to the same per-desktop registry keys Windows
 uses (`HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name`), so renames are
-picked up by Windows and other tools. Moving a window to another desktop uses
-the documented `IVirtualDesktopManager::MoveWindowToDesktop` API rather than
-synthesized hotkeys.
+picked up by Windows and other tools.
 
 Switching desktops calls the shell's internal `IVirtualDesktopManagerInternal`
-so clicking a desktop pill goes straight there. Creating or closing a desktop
-still presses the system shortcut (`Win` + `Ctrl` + `D` / `F4`), and if the
-internal interface is unavailable the switch falls back to
-`Win` + `Ctrl` + `Left`/`Right` as well.
+so clicking a desktop pill or pressing a number goes straight there. Moving a
+window to another desktop uses the shell's `IApplicationViewCollection` and
+`MoveViewToDesktop`: the documented `MoveWindowToDesktop` refuses windows owned
+by other processes with `E_ACCESSDENIED`, which is always the case for the
+separate tool process. Creating or closing a desktop still presses the system
+shortcut (`Win` + `Ctrl` + `D` / `F4`), and if the internal interface is
+unavailable the switch falls back to `Win` + `Ctrl` + `Left`/`Right`.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 
@@ -347,6 +352,8 @@ static const IID kIidVirtualDesktopManagerInternal = {
     0x53f5ca0b, 0x158f, 0x4124, {0x90, 0x0c, 0x05, 0x71, 0x58, 0x06, 0x0b, 0x27}};
 static const IID kIidVirtualDesktop = {
     0x3f07f4be, 0xb107, 0x441a, {0xaf, 0x0f, 0x39, 0xd8, 0x25, 0x29, 0x07, 0x2c}};
+static const IID kIidApplicationViewCollection = {
+    0x1841c6d7, 0x4f9d, 0x42c0, {0xaf, 0x41, 0x87, 0x47, 0x53, 0x8f, 0x10, 0xe5}};
 
 ////////////////////////////////////////////////////////////////////////////////
 // SMALL HELPERS
@@ -526,6 +533,7 @@ static std::vector<DesktopInfo> g_desktops;
 static int g_currentDesktop = 0;
 static IVirtualDesktopManager* g_vdm = nullptr;
 static IUnknown* g_vdInternal = nullptr;
+static IUnknown* g_viewCollection = nullptr;
 static bool g_vdInternalResolved = false;
 static int g_pendingDesktopTarget = -1;
 static int g_pendingDesktopTries = 0;
@@ -591,6 +599,7 @@ static void MoveSelectedWindowToDesktopIndex(int index);
 static void ToggleHold();
 static void StartHeldWatch();
 static void StopHeldWatch();
+static bool MoveWindowToDesktopInternal(HWND window, const GUID& id);
 static void SwitchDesktopBy(int delta);
 static void BeginRenameDesktop(int index);
 static void CommitRenameDesktop();
@@ -1570,7 +1579,7 @@ static void ToggleHold()
 // The caller can suppress the rebuild when it is about to rebuild anyway.
 static void MoveHeldTasksToDesktop(const GUID& id, bool rebuild = true)
 {
-    if (!g_vdm || g_held.empty())
+    if (g_held.empty())
         return;
 
     bool changed = false;
@@ -1583,11 +1592,18 @@ static void MoveHeldTasksToDesktop(const GUID& id, bool rebuild = true)
             continue;
         }
 
-        GUID current = {};
-        if (SUCCEEDED(g_vdm->GetWindowDesktopId(window, &current)) && IsEqualGUID(current, id))
-            continue;
+        if (g_vdm)
+        {
+            GUID current = {};
+            if (SUCCEEDED(g_vdm->GetWindowDesktopId(window, &current)) &&
+                IsEqualGUID(current, id))
+                continue;
+        }
 
-        if (SUCCEEDED(g_vdm->MoveWindowToDesktop(window, id)))
+        bool moved = MoveWindowToDesktopInternal(window, id);
+        if (!moved && g_vdm)
+            moved = SUCCEEDED(g_vdm->MoveWindowToDesktop(window, id));
+        if (moved)
             changed = true;
     }
 
@@ -1629,7 +1645,7 @@ static void StopHeldWatch()
 // IVirtualDesktopManager API.
 static void MoveSelectedWindowToDesktopIndex(int index)
 {
-    if (!g_vdm || g_desktops.empty())
+    if (g_desktops.empty())
         return;
     if (index < 0 || index >= static_cast<int>(g_desktops.size()))
         return;
@@ -1641,7 +1657,12 @@ static void MoveSelectedWindowToDesktopIndex(int index)
         return;
 
     ReleaseThumbnails();
-    if (SUCCEEDED(g_vdm->MoveWindowToDesktop(window, g_desktops[index].id)))
+    bool moved = MoveWindowToDesktopInternal(window, g_desktops[index].id);
+    if (!moved && g_vdm)
+        moved = SUCCEEDED(g_vdm->MoveWindowToDesktop(window, g_desktops[index].id));
+    Wh_Log(L"Move window %p to desktop %d: %s", static_cast<void*>(window), index,
+           moved ? L"ok" : L"failed");
+    if (moved)
     {
         RebuildWindowList();
         g_desktopSelected = g_currentDesktop;
@@ -1694,10 +1715,9 @@ static void SendChord(WORD vk, bool extended)
     SendInput(index, inputs, sizeof(INPUT));
 }
 
-// Switches straight to a desktop through the shell's undocumented
-// IVirtualDesktopManagerInternal instead of stepping with Win+Ctrl+Arrow.
-// Returns false when the interface is unavailable, so callers can fall back.
-static bool SwitchDesktopDirect(const GUID& id)
+// Resolves the shell's internal desktop objects once. Returns
+// IVirtualDesktopManagerInternal, or null when the shell cannot be reached.
+static IUnknown* DesktopManagerInternal()
 {
     if (!g_vdInternalResolved)
     {
@@ -1717,34 +1737,47 @@ static bool SwitchDesktopDirect(const GUID& id)
             queryService(provider, kClsidVirtualDesktopManagerInternal,
                          kIidVirtualDesktopManagerInternal,
                          reinterpret_cast<void**>(&g_vdInternal));
+            // IApplicationViewCollection is served under its own IID.
+            queryService(provider, kIidApplicationViewCollection,
+                         kIidApplicationViewCollection,
+                         reinterpret_cast<void**>(&g_viewCollection));
             provider->Release();
         }
+
+        if (!g_vdInternal || !g_viewCollection)
+            Wh_Log(L"Shell desktop internals unavailable (manager=%p views=%p)",
+                   static_cast<void*>(g_vdInternal),
+                   static_cast<void*>(g_viewCollection));
     }
+    return g_vdInternal;
+}
 
-    if (!g_vdInternal)
-        return false;
+// Returns a ref-counted IVirtualDesktop for the given id, or null.
+static IUnknown* FindDesktopObject(const GUID& id)
+{
+    IUnknown* manager = DesktopManagerInternal();
+    if (!manager)
+        return nullptr;
 
-    // IVirtualDesktopManagerInternal vtable: GetDesktops is slot 7 and
-    // SwitchDesktop is slot 9 on every Windows 11 build.
+    // IVirtualDesktopManagerInternal vtable: GetDesktops is slot 7.
     typedef HRESULT(STDMETHODCALLTYPE * GetDesktopsFn)(void*, IUnknown**);
     typedef HRESULT(STDMETHODCALLTYPE * GetCountFn)(void*, UINT*);
     typedef HRESULT(STDMETHODCALLTYPE * GetAtFn)(void*, UINT, const GUID&, void**);
     typedef HRESULT(STDMETHODCALLTYPE * GetIdFn)(void*, GUID*);
-    typedef HRESULT(STDMETHODCALLTYPE * SwitchFn)(void*, void*);
 
-    void** manager = *reinterpret_cast<void***>(g_vdInternal);
+    void** managerVtbl = *reinterpret_cast<void***>(manager);
     IUnknown* desktops = nullptr;
-    if (FAILED(reinterpret_cast<GetDesktopsFn>(manager[7])(g_vdInternal, &desktops)) ||
+    if (FAILED(reinterpret_cast<GetDesktopsFn>(managerVtbl[7])(manager, &desktops)) ||
         !desktops)
-        return false;
+        return nullptr;
 
     // IObjectArray: GetCount is slot 3, GetAt is slot 4.
     void** array = *reinterpret_cast<void***>(desktops);
     UINT count = 0;
     reinterpret_cast<GetCountFn>(array[3])(desktops, &count);
 
-    bool switched = false;
-    for (UINT i = 0; i < count && !switched; i++)
+    IUnknown* found = nullptr;
+    for (UINT i = 0; i < count && !found; i++)
     {
         IUnknown* desktop = nullptr;
         if (FAILED(reinterpret_cast<GetAtFn>(array[4])(
@@ -1753,20 +1786,72 @@ static bool SwitchDesktopDirect(const GUID& id)
             continue;
 
         // IVirtualDesktop: GetId is slot 4.
-        void** desktopVtbl = *reinterpret_cast<void***>(desktop);
         GUID desktopId = {};
-        if (SUCCEEDED(
-                reinterpret_cast<GetIdFn>(desktopVtbl[4])(desktop, &desktopId)) &&
+        if (SUCCEEDED(reinterpret_cast<GetIdFn>(
+                (*reinterpret_cast<void***>(desktop))[4])(desktop, &desktopId)) &&
             IsEqualGUID(desktopId, id))
-        {
-            switched = SUCCEEDED(
-                reinterpret_cast<SwitchFn>(manager[9])(g_vdInternal, desktop));
-        }
-        desktop->Release();
+            found = desktop;
+        else
+            desktop->Release();
     }
 
     desktops->Release();
-    return switched;
+    return found;
+}
+
+// Switches straight to a desktop through the shell's undocumented
+// IVirtualDesktopManagerInternal instead of stepping with Win+Ctrl+Arrow.
+// Returns false when the interface is unavailable, so callers can fall back.
+static bool SwitchDesktopDirect(const GUID& id)
+{
+    IUnknown* manager = DesktopManagerInternal();
+    if (!manager)
+        return false;
+
+    IUnknown* desktop = FindDesktopObject(id);
+    if (!desktop)
+        return false;
+
+    // SwitchDesktop is vtable slot 9 on every Windows 11 build.
+    typedef HRESULT(STDMETHODCALLTYPE * SwitchFn)(void*, void*);
+    const HRESULT hr = reinterpret_cast<SwitchFn>(
+        (*reinterpret_cast<void***>(manager))[9])(manager, desktop);
+    desktop->Release();
+    return SUCCEEDED(hr);
+}
+
+// Moves a window that may belong to another process to a desktop. The
+// documented IVirtualDesktopManager::MoveWindowToDesktop refuses those with
+// E_ACCESSDENIED, so the shell's view collection and MoveViewToDesktop are used.
+static bool MoveWindowToDesktopInternal(HWND window, const GUID& id)
+{
+    IUnknown* manager = DesktopManagerInternal();
+    if (!manager || !g_viewCollection || !window)
+        return false;
+
+    // IApplicationViewCollection: GetViewForHwnd is vtable slot 6.
+    typedef HRESULT(STDMETHODCALLTYPE * GetViewForHwndFn)(void*, HWND, IUnknown**);
+    IUnknown* view = nullptr;
+    if (FAILED(reinterpret_cast<GetViewForHwndFn>(
+            (*reinterpret_cast<void***>(g_viewCollection))[6])(
+            g_viewCollection, window, &view)) ||
+        !view)
+        return false;
+
+    IUnknown* desktop = FindDesktopObject(id);
+    if (!desktop)
+    {
+        view->Release();
+        return false;
+    }
+
+    // IVirtualDesktopManagerInternal: MoveViewToDesktop is vtable slot 4.
+    typedef HRESULT(STDMETHODCALLTYPE * MoveViewFn)(void*, void*, void*);
+    const HRESULT hr = reinterpret_cast<MoveViewFn>(
+        (*reinterpret_cast<void***>(manager))[4])(manager, view, desktop);
+    desktop->Release();
+    view->Release();
+    return SUCCEEDED(hr);
 }
 
 static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
@@ -2430,9 +2515,8 @@ static void RenderScene(HDC dc)
         hint = L"Enter switch  \u00B7  F2 rename  \u00B7  N new  \u00B7  Delete close  "
                L"\u00B7  Ctrl+Left/Right switch  \u00B7  Tab windows";
     else
-        hint = L"Enter switch  \u00B7  Delete close  \u00B7  Shift+Left/Right move to "
-               L"desktop  \u00B7  M move to number  \u00B7  U hold  \u00B7  Tab desktops  "
-               L"\u00B7  / search";
+        hint = L"Enter switch  \u00B7  Delete close  \u00B7  1-9 desktop  \u00B7  "
+               L"Shift+1-9 move  \u00B7  U hold  \u00B7  Tab desktops  \u00B7  / search";
     DrawTextBlock(hint, g_fmtHint, hintRect, g_theme.text, DWRITE_TEXT_ALIGNMENT_LEADING,
                   0.42f);
 
@@ -3053,6 +3137,26 @@ static void OnKeyDown(WPARAM key)
         return;
     }
 
+    // Bare 1-9 jump to that desktop; Shift+1-9 move the selected window there.
+    if ((key >= '1' && key <= '9') || (key >= VK_NUMPAD1 && key <= VK_NUMPAD9))
+    {
+        const int index = key >= VK_NUMPAD1 ? static_cast<int>(key - VK_NUMPAD1)
+                                            : static_cast<int>(key - '1');
+        if (index >= 0 && index < static_cast<int>(g_desktops.size()))
+        {
+            if (shift)
+            {
+                MoveSelectedWindowToDesktopIndex(index);
+            }
+            else if (index != g_currentDesktop)
+            {
+                g_desktopSelected = index;
+                BeginDesktopAction(index, false, false);
+            }
+        }
+        return;
+    }
+
     switch (key)
     {
     case VK_ESCAPE:
@@ -3662,6 +3766,11 @@ static void ShutdownUi()
     {
         g_vdInternal->Release();
         g_vdInternal = nullptr;
+    }
+    if (g_viewCollection)
+    {
+        g_viewCollection->Release();
+        g_viewCollection = nullptr;
     }
     g_vdInternalResolved = false;
 

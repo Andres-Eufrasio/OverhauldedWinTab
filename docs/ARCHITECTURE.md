@@ -164,8 +164,9 @@ Desktop data comes from:
 
 Switching a desktop calls the shell's internal
 `IVirtualDesktopManagerInternal` (obtained from `CLSID_ImmersiveShell` through
-`IServiceProvider::QueryService`) so that clicking any desktop pill jumps
-straight to it instead of stepping through the desktops in between. Only
+`IServiceProvider::QueryService`) so that clicking any desktop pill, or pressing
+its number, jumps straight to it instead of stepping through the desktops in
+between. Only
 `GetDesktops` (vtable slot 7), `IObjectArray::GetAt` (slot 4),
 `IVirtualDesktop::GetId` (slot 4) and `SwitchDesktop` (slot 9) are used; those
 slots sit before the per-build additions of the interface, and the interface id
@@ -177,16 +178,25 @@ closing desktops still use injected `Win` + `Ctrl` + `D` / `F4`.
 
 Held tasks (`U`) are stored in `g_held` as window handle plus colour. A 200 ms
 timer on the message-only control window reads `CurrentVirtualDesktop`; when it
-changes, each held window is moved with `MoveWindowToDesktop`, so a held task
-follows the user even while the overview is closed. After an in-overview switch
-the same carry happens immediately from the desktop timer, and handles that
-closed in the meantime are pruned.
+changes, each held window is moved to the new desktop, so a held task follows the
+user even while the overview is closed. After an in-overview switch the same
+carry happens immediately from the desktop timer, and handles that closed in the
+meantime are pruned.
 
 Desktop names are read from
 `HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name` and written back to the
 same key when the user renames a desktop, so renames are picked up by Windows
-and other tools. Moving a window between desktops uses the documented
-`IVirtualDesktopManager::MoveWindowToDesktop`, which needs no synthesized input.
+and other tools.
+
+Moving a window to another desktop cannot use the documented
+`IVirtualDesktopManager::MoveWindowToDesktop`: measured from the tool process it
+returns `E_ACCESSDENIED` (`0x80070005`) for every window the caller does not own,
+which is all of them. Instead the mod resolves the shell's
+`IApplicationViewCollection` (same `QueryService` on `CLSID_ImmersiveShell`),
+gets an `IApplicationView` with `GetViewForHwnd` (slot 6), finds the target
+`IVirtualDesktop` and calls `IVirtualDesktopManagerInternal::MoveViewToDesktop`
+(slot 4). That path is cross-process safe and was verified to move a window to
+another desktop and back. The documented API is kept as a fallback.
 
 ## 6. Interaction model
 
@@ -217,9 +227,10 @@ box looked empty. Every `Win` + `Tab` now opens on the full, unfiltered list.
 Vim navigation (`h` `j` `k` `l`, `/`, `x`) is gated on `Behavior.VimNavigation`.
 Unmodified arrow keys keep their original meaning; `Ctrl` + `Left`/`Right`
 switches desktops and `Shift` + `Left`/`Right` moves the selected window to an
-adjacent desktop. `M` sets `g_pendingMove`; the next `1`-`9` moves the selected
-window to that desktop index and any other key cancels. `U` toggles the hold on
-the selected window, and held cards are framed in their hold colour.
+adjacent desktop. Bare `1`-`9` jump to that desktop and `Shift` + `1`-`9` move
+the selected window there; `M` also sets `g_pendingMove`, after which the next
+`1`-`9` moves the selected window and any other key cancels. `U` toggles the
+hold on the selected window, and held cards are framed in their hold colour.
 
 Activating a window hides the overlay immediately (no reverse animation) and
 then restores and foregrounds the target. Closing a window posts `WM_CLOSE`,

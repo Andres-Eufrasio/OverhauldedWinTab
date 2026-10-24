@@ -26,6 +26,8 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Rename virtual desktops inline (saved the same way Windows stores them)
 - Move a window to another virtual desktop without leaving the overview
 - Hold a window with `U` so it follows you to every desktop you switch to
+- Jump straight to a desktop with `1`-`9`, or move the selected window there
+  with `Shift` + `1`-`9`
 - Vim-style navigation (`h` `j` `k` `l`, `/`, `x`)
 - Color themes with a built-in Catppuccin set (Mocha, Macchiato, Frappe, Latte),
   Nord, Dracula, Tokyo Night, Gruvbox and Rose Pine
@@ -60,6 +62,8 @@ opens immediately instead of building the interface from scratch every time.
 | `Ctrl` + `Left` / `Right` | Switch to the previous / next virtual desktop |
 | `Shift` + `Left` / `Right` | Move the selected window to the previous / next desktop |
 | `M` then `1`-`9` | Move the selected window to that numbered desktop |
+| `1`-`9` | Jump to that numbered virtual desktop |
+| `Shift` + `1`-`9` | Move the selected window to that numbered desktop |
 | `U` | Hold or release the selected window; held windows follow you across desktops |
 | `F2` | Rename the selected (or current) virtual desktop |
 | `N` | Create a new virtual desktop (strip focused) |
@@ -149,15 +153,16 @@ The mod runs in two places:
 
 Virtual desktop names are written to the same per-desktop registry keys Windows
 uses (`HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name`), so renames are
-picked up by Windows and other tools. Moving a window to another desktop uses
-the documented `IVirtualDesktopManager::MoveWindowToDesktop` API rather than
-synthesized hotkeys.
+picked up by Windows and other tools.
 
 Switching desktops calls the shell's internal `IVirtualDesktopManagerInternal`
-so clicking a desktop pill goes straight there. Creating or closing a desktop
-still presses the system shortcut (`Win` + `Ctrl` + `D` / `F4`), and if the
-internal interface is unavailable the switch falls back to
-`Win` + `Ctrl` + `Left`/`Right` as well.
+so clicking a desktop pill or pressing a number goes straight there. Moving a
+window to another desktop uses the shell's `IApplicationViewCollection` and
+`MoveViewToDesktop`: the documented `MoveWindowToDesktop` refuses windows owned
+by other processes with `E_ACCESSDENIED`, which is always the case for the
+separate tool process. Creating or closing a desktop still presses the system
+shortcut (`Win` + `Ctrl` + `D` / `F4`), and if the internal interface is
+unavailable the switch falls back to `Win` + `Ctrl` + `Left`/`Right`.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 
