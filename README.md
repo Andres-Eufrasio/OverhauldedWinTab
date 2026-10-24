@@ -1,8 +1,8 @@
-# OverhauldedWin Tab
+# OverhauldedWinTab
 
 A modern replacement for the Windows 11 **Task View** (`Win` + `Tab`).
 
-OverhauldedWin Tab takes over the `Win` + `Tab` hotkey and presents a dark,
+OverhauldedWinTab takes over the `Win` + `Tab` hotkey and presents a dark,
 fluid overview of the current virtual desktop: a live grid of window previews
 with real DWM thumbnails, a search filter, and a virtual desktop strip that can
 switch, create and close desktops.
@@ -21,6 +21,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
+- Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
 - Rename virtual desktops inline (saved the same way Windows stores them)
@@ -41,7 +42,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 
 ## Design
 
-OverhauldedWin Tab keeps the visual language of OverhauldedWin: a dark obsidian
+OverhauldedWinTab keeps the visual language of OverhauldedWin: a dark obsidian
 panel, rounded cards, subtle downward shadows, an accent highlight for the
 selected window, and a configurable backdrop (Acrylic, Mica, Mica Alt, Blur,
 Solid or transparent) behind the overview.
@@ -68,7 +69,7 @@ opens immediately instead of building the interface from scratch every time.
 | `F2` | Rename the selected (or current) virtual desktop |
 | `N` | Create a new virtual desktop (strip focused) |
 | `h` `j` `k` `l` | Vim movement (move through the grid / desktop strip) |
-| `/` | Focus the search field |
+| `/` | Focus the search field (reveals it when hidden) |
 | `x` | Close the selected window (Vim) |
 | Typing while the search is focused | Filter windows by title or application |
 | Left click | Activate a window, or jump straight to a desktop |
@@ -79,9 +80,12 @@ opens immediately instead of building the interface from scratch every time.
 | Mouse wheel | Move through grid pages |
 
 The search field is only typed into once it has focus: click it or press `/`
-first. Until then the letter keys are available to navigation, so a query that
-contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
-**Vim navigation** to `off` to disable the movement keys.
+first. With **Always show search** turned off the field stays hidden until you
+press `/`. Until the field has focus the letter keys are available to navigation,
+so a query that contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a
+command. Focusing a field that already has a query selects it, so the next typed
+character replaces the old query. Set **Vim navigation** to `off` to disable the
+movement keys.
 
 ## Settings
 
@@ -93,6 +97,8 @@ contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
 | Background color | Tint color of the overview panel, in `#RRGGBB` format (Custom theme) |
 | Background opacity | How strong the panel tint is over the backdrop (`0`-`100`) |
 | Show window icons | Show each window's application icon in its card header |
+| Show hints | Show the keyboard shortcut hints at the bottom left |
+| Always show search | Keep the search bar visible; when off, press `/` to reveal it |
 | Animation speed | Relative speed of the open and close animations |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
@@ -138,8 +144,10 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 ## Search
 
 Press `/` or click the field to focus the search, then type to filter windows by
-title or application. The query is cleared every time the overview opens, so a
-new `Win` + `Tab` always starts from the full window list.
+title or application. Focusing the field again selects the previous query, so
+typing starts a new one. The query is cleared every time the overview opens, so a
+new `Win` + `Tab` always starts from the full window list. Turn **Always show
+search** off to keep the field hidden until you press `/`.
 
 ## How it works
 
@@ -203,4 +211,4 @@ the complete license text.
 
 ---
 
-OverhauldedWin Tab is a pre-release project.
+OverhauldedWinTab is a pre-release project.

@@ -1,8 +1,8 @@
 // ==WindhawkMod==
 // @id              overhaulded-win-tab
-// @name            OverhauldedWin Tab
+// @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.3.1
+// @version         0.3.2
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -13,11 +13,11 @@
 
 // ==WindhawkModReadme==
 /*
-# OverhauldedWin Tab
+# OverhauldedWinTab
 
 A modern replacement for the Windows 11 **Task View** (`Win` + `Tab`).
 
-OverhauldedWin Tab takes over the `Win` + `Tab` hotkey and presents a dark,
+OverhauldedWinTab takes over the `Win` + `Tab` hotkey and presents a dark,
 fluid overview of the current virtual desktop: a live grid of window previews
 with real DWM thumbnails, a search filter, and a virtual desktop strip that can
 switch, create and close desktops.
@@ -36,6 +36,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
+- Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
 - Rename virtual desktops inline (saved the same way Windows stores them)
@@ -56,7 +57,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 
 ## Design
 
-OverhauldedWin Tab keeps the visual language of OverhauldedWin: a dark obsidian
+OverhauldedWinTab keeps the visual language of OverhauldedWin: a dark obsidian
 panel, rounded cards, subtle downward shadows, an accent highlight for the
 selected window, and a configurable backdrop (Acrylic, Mica, Mica Alt, Blur,
 Solid or transparent) behind the overview.
@@ -83,7 +84,7 @@ opens immediately instead of building the interface from scratch every time.
 | `F2` | Rename the selected (or current) virtual desktop |
 | `N` | Create a new virtual desktop (strip focused) |
 | `h` `j` `k` `l` | Vim movement (move through the grid / desktop strip) |
-| `/` | Focus the search field |
+| `/` | Focus the search field (reveals it when hidden) |
 | `x` | Close the selected window (Vim) |
 | Typing while the search is focused | Filter windows by title or application |
 | Left click | Activate a window, or jump straight to a desktop |
@@ -94,9 +95,12 @@ opens immediately instead of building the interface from scratch every time.
 | Mouse wheel | Move through grid pages |
 
 The search field is only typed into once it has focus: click it or press `/`
-first. Until then the letter keys are available to navigation, so a query that
-contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
-**Vim navigation** to `off` to disable the movement keys.
+first. With **Always show search** turned off the field stays hidden until you
+press `/`. Until the field has focus the letter keys are available to navigation,
+so a query that contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a
+command. Focusing a field that already has a query selects it, so the next typed
+character replaces the old query. Set **Vim navigation** to `off` to disable the
+movement keys.
 
 ## Settings
 
@@ -108,6 +112,8 @@ contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
 | Background color | Tint color of the overview panel, in `#RRGGBB` format (Custom theme) |
 | Background opacity | How strong the panel tint is over the backdrop (`0`-`100`) |
 | Show window icons | Show each window's application icon in its card header |
+| Show hints | Show the keyboard shortcut hints at the bottom left |
+| Always show search | Keep the search bar visible; when off, press `/` to reveal it |
 | Animation speed | Relative speed of the open and close animations |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
@@ -153,8 +159,10 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 ## Search
 
 Press `/` or click the field to focus the search, then type to filter windows by
-title or application. The query is cleared every time the overview opens, so a
-new `Win` + `Tab` always starts from the full window list.
+title or application. Focusing the field again selects the previous query, so
+typing starts a new one. The query is cleared every time the overview opens, so a
+new `Win` + `Tab` always starts from the full window list. Turn **Always show
+search** off to keep the field hidden until you press `/`.
 
 ## How it works
 
@@ -218,7 +226,7 @@ the complete license text.
 
 ---
 
-OverhauldedWin Tab is a pre-release project.
+OverhauldedWinTab is a pre-release project.
 */
 // ==/WindhawkModReadme==
 
@@ -261,6 +269,12 @@ OverhauldedWin Tab is a pre-release project.
     - ShowWindowIcons: true
       $name: Show window icons
       $description: Show each window's application icon in the card header.
+    - ShowHints: true
+      $name: Show hints
+      $description: Show the keyboard shortcut hints at the bottom left.
+    - AlwaysShowSearch: true
+      $name: Always show search
+      $description: Keep the search bar visible. When off, press / to reveal it.
     - AnimationSpeed: "100"
       $name: Animation speed
       $description: Relative speed of the open and close animations.
@@ -443,6 +457,8 @@ static BackgroundMode g_backgroundMode = BackgroundMode::Acrylic;
 static UINT32 g_backgroundColor = 0xFF0A0D12;
 static float g_backgroundOpacity = 0.70f;
 static bool g_showIcons = true;
+static bool g_showHints = true;
+static bool g_searchAlwaysVisible = true;
 static int g_animSpeedPercent = 100;
 static bool g_closeOnFocusLoss = true;
 static bool g_wrapNavigation = true;
@@ -471,6 +487,7 @@ static UINT g_dpi = 96;
 // Interaction state.
 static std::wstring g_search;
 static bool g_searchFocused = false;
+static bool g_searchSelectAll = false;
 static int g_selected = 0;
 static int g_page = 0;
 static bool g_focusStrip = false;
@@ -821,6 +838,8 @@ static void LoadSettings()
                      : BackgroundMode::Acrylic;
 
     g_showIcons = Wh_GetIntSetting(L"Appearance.ShowWindowIcons") != 0;
+    g_showHints = Wh_GetIntSetting(L"Appearance.ShowHints") != 0;
+    g_searchAlwaysVisible = Wh_GetIntSetting(L"Appearance.AlwaysShowSearch") != 0;
 
     const std::wstring speed = read(L"Appearance.AnimationSpeed");
     g_animSpeedPercent = speed == L"75" ? 75 : speed == L"125" ? 125
@@ -1489,6 +1508,7 @@ static void BeginRenameDesktop(int index)
     g_focusStrip = true;
     g_desktopSelected = index;
     g_searchFocused = false;
+    g_searchSelectAll = false;
     if (g_overlay)
         SetTimer(g_overlay, kTimerCaret, 530, nullptr);
     InvalidateRect(g_overlay, nullptr, FALSE);
@@ -1956,6 +1976,11 @@ static void RebuildPills()
     g_createRect = {cursor, y, cursor + createW, y + pillH};
 }
 
+static bool SearchVisible()
+{
+    return g_searchAlwaysVisible || g_searchFocused || !g_search.empty();
+}
+
 static void UpdateLayout()
 {
     const float s = g_scale;
@@ -1968,9 +1993,18 @@ static void UpdateLayout()
     const float searchH = 46.0f * s;
     const float searchW = std::min(560.0f * s, g_layout.w - 2.0f * margin);
     const float searchX = (g_layout.w - searchW) / 2.0f;
-    g_layout.search = {searchX, 44.0f * s, searchX + searchW, 44.0f * s + searchH};
-    g_searchClearRect = {g_layout.search.r - 38.0f * s, g_layout.search.t + 6.0f * s,
-                         g_layout.search.r - 8.0f * s, g_layout.search.b - 6.0f * s};
+    if (SearchVisible())
+    {
+        g_layout.search = {searchX, 44.0f * s, searchX + searchW, 44.0f * s + searchH};
+        g_searchClearRect = {g_layout.search.r - 38.0f * s, g_layout.search.t + 6.0f * s,
+                             g_layout.search.r - 8.0f * s, g_layout.search.b - 6.0f * s};
+    }
+    else
+    {
+        // Collapse the bar so the grid can use the space; pressing / reveals it.
+        g_layout.search = {searchX, 44.0f * s, searchX + searchW, 44.0f * s};
+        g_searchClearRect = {};
+    }
 
     const float stripH = 64.0f * s;
     const float stripBottom = g_layout.h - 46.0f * s;
@@ -2237,57 +2271,77 @@ static void RenderScene(HDC dc)
     DrawTextBlock(L"Task View", g_fmtTitle, titleRect, g_theme.text,
                   DWRITE_TEXT_ALIGNMENT_LEADING, 0.92f);
 
-    // Search field.
-    const float searchRadius = g_layout.search.H() / 2.0f;
-    FillRound(g_layout.search, searchRadius, g_theme.searchFill, 0.95f);
-    StrokeRound(g_layout.search, searchRadius,
-                g_searchFocused ? g_theme.accent : g_theme.text, 1.25f * s,
-                g_searchFocused ? 0.85f : 0.10f);
+    // Search field (hidden unless activated when "Always show search" is off).
+    if (SearchVisible())
+    {
+        const float searchRadius = g_layout.search.H() / 2.0f;
+        FillRound(g_layout.search, searchRadius, g_theme.searchFill, 0.95f);
+        StrokeRound(g_layout.search, searchRadius,
+                    g_searchFocused ? g_theme.accent : g_theme.text, 1.25f * s,
+                    g_searchFocused ? 0.85f : 0.10f);
 
-    // Magnifier glyph.
-    {
-        const float glyphX = g_layout.search.l + 22.0f * s;
-        const float glyphY = g_layout.search.t + g_layout.search.H() / 2.0f;
-        g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.55f));
-        const D2D1_ELLIPSE circle =
-            D2D1::Ellipse(D2D1::Point2F(glyphX, glyphY - 1.0f * s), 6.0f * s, 6.0f * s);
-        g_d2dTarget->DrawEllipse(&circle, g_d2dBrush, 1.4f * s);
-        g_d2dTarget->DrawLine(D2D1::Point2F(glyphX + 4.5f * s, glyphY + 3.5f * s),
-                              D2D1::Point2F(glyphX + 9.0f * s, glyphY + 8.0f * s),
-                              g_d2dBrush, 1.6f * s);
-    }
+        // Magnifier glyph.
+        {
+            const float glyphX = g_layout.search.l + 22.0f * s;
+            const float glyphY = g_layout.search.t + g_layout.search.H() / 2.0f;
+            g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.55f));
+            const D2D1_ELLIPSE circle = D2D1::Ellipse(
+                D2D1::Point2F(glyphX, glyphY - 1.0f * s), 6.0f * s, 6.0f * s);
+            g_d2dTarget->DrawEllipse(&circle, g_d2dBrush, 1.4f * s);
+            g_d2dTarget->DrawLine(D2D1::Point2F(glyphX + 4.5f * s, glyphY + 3.5f * s),
+                                  D2D1::Point2F(glyphX + 9.0f * s, glyphY + 8.0f * s),
+                                  g_d2dBrush, 1.6f * s);
+        }
 
-    const float textLeft = g_layout.search.l + 42.0f * s;
-    const float textRight = g_layout.search.r - (g_search.empty() ? 16.0f * s : 44.0f * s);
-    const RectF searchTextRect = {textLeft, g_layout.search.t, textRight, g_layout.search.b};
-    if (g_search.empty())
-    {
-        DrawTextBlock(L"Search windows", g_fmtSearch, searchTextRect, g_theme.text,
-                      DWRITE_TEXT_ALIGNMENT_LEADING, 0.40f);
-    }
-    else
-    {
-        DrawTextBlock(g_search, g_fmtSearch, searchTextRect, g_theme.text,
-                      DWRITE_TEXT_ALIGNMENT_LEADING, 0.96f);
-        g_d2dBrush->SetColor(ColorOf(g_theme.text, g_hoverSearchClear ? 0.85f : 0.45f));
-        const float ccx = g_searchClearRect.l + g_searchClearRect.W() / 2.0f;
-        const float ccy = g_searchClearRect.t + g_searchClearRect.H() / 2.0f;
-        const float arm = 5.0f * s;
-        g_d2dTarget->DrawLine(D2D1::Point2F(ccx - arm, ccy - arm),
-                              D2D1::Point2F(ccx + arm, ccy + arm), g_d2dBrush, 1.5f * s);
-        g_d2dTarget->DrawLine(D2D1::Point2F(ccx + arm, ccy - arm),
-                              D2D1::Point2F(ccx - arm, ccy + arm), g_d2dBrush, 1.5f * s);
-    }
+        const float textLeft = g_layout.search.l + 42.0f * s;
+        const float textRight =
+            g_layout.search.r - (g_search.empty() ? 16.0f * s : 44.0f * s);
+        const RectF searchTextRect = {textLeft, g_layout.search.t, textRight,
+                                      g_layout.search.b};
+        if (g_search.empty())
+        {
+            DrawTextBlock(L"Search windows", g_fmtSearch, searchTextRect, g_theme.text,
+                          DWRITE_TEXT_ALIGNMENT_LEADING, 0.40f);
+        }
+        else
+        {
+            const float textW = MeasureTextWidth(g_search, g_fmtSearch);
+            if (g_searchSelectAll)
+            {
+                const RectF selection = {
+                    textLeft - 2.0f * s,
+                    g_layout.search.t + 9.0f * s,
+                    std::min(textRight, textLeft + textW + 2.0f * s),
+                    g_layout.search.b - 9.0f * s};
+                FillRound(selection, 4.0f * s, g_theme.accent, 0.35f);
+            }
 
-    // Caret.
-    if (g_searchFocused && ((GetTickCount64() / 530) % 2) == 0)
-    {
-        const float textW = MeasureTextWidth(g_search, g_fmtSearch);
-        const float caretX = std::min(textRight, textLeft + textW + 1.0f * s);
-        g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.85f));
-        g_d2dTarget->DrawLine(D2D1::Point2F(caretX, g_layout.search.t + 12.0f * s),
-                              D2D1::Point2F(caretX, g_layout.search.b - 12.0f * s),
-                              g_d2dBrush, 1.4f * s);
+            DrawTextBlock(g_search, g_fmtSearch, searchTextRect, g_theme.text,
+                          DWRITE_TEXT_ALIGNMENT_LEADING, 0.96f);
+            g_d2dBrush->SetColor(
+                ColorOf(g_theme.text, g_hoverSearchClear ? 0.85f : 0.45f));
+            const float ccx = g_searchClearRect.l + g_searchClearRect.W() / 2.0f;
+            const float ccy = g_searchClearRect.t + g_searchClearRect.H() / 2.0f;
+            const float arm = 5.0f * s;
+            g_d2dTarget->DrawLine(D2D1::Point2F(ccx - arm, ccy - arm),
+                                  D2D1::Point2F(ccx + arm, ccy + arm), g_d2dBrush,
+                                  1.5f * s);
+            g_d2dTarget->DrawLine(D2D1::Point2F(ccx + arm, ccy - arm),
+                                  D2D1::Point2F(ccx - arm, ccy + arm), g_d2dBrush,
+                                  1.5f * s);
+        }
+
+        // Caret.
+        if (g_searchFocused && !g_searchSelectAll &&
+            ((GetTickCount64() / 530) % 2) == 0)
+        {
+            const float textW = MeasureTextWidth(g_search, g_fmtSearch);
+            const float caretX = std::min(textRight, textLeft + textW + 1.0f * s);
+            g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.85f));
+            g_d2dTarget->DrawLine(D2D1::Point2F(caretX, g_layout.search.t + 12.0f * s),
+                                  D2D1::Point2F(caretX, g_layout.search.b - 12.0f * s),
+                                  g_d2dBrush, 1.4f * s);
+        }
     }
 
     // Window grid.
@@ -2517,8 +2571,9 @@ static void RenderScene(HDC dc)
     else
         hint = L"Enter switch  \u00B7  Delete close  \u00B7  1-9 desktop  \u00B7  "
                L"Shift+1-9 move  \u00B7  U hold  \u00B7  Tab desktops  \u00B7  / search";
-    DrawTextBlock(hint, g_fmtHint, hintRect, g_theme.text, DWRITE_TEXT_ALIGNMENT_LEADING,
-                  0.42f);
+    if (g_showHints)
+        DrawTextBlock(hint, g_fmtHint, hintRect, g_theme.text,
+                      DWRITE_TEXT_ALIGNMENT_LEADING, 0.42f);
 
     // Busy indicator (desktop switching).
     if (g_busy)
@@ -2795,6 +2850,7 @@ static void ShowOverlay()
     g_focusStrip = false;
     g_search.clear();
     g_searchFocused = false;
+    g_searchSelectAll = false;
     g_renameDesktop = -1;
     g_renameText.clear();
     g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
@@ -2947,6 +3003,7 @@ static void MoveSelection(int dx, int dy)
 static void SetSearch(const std::wstring& text)
 {
     g_search = text;
+    g_searchSelectAll = false;
     RebuildFilter();
     g_selected = 0;
     g_page = 0;
@@ -2956,6 +3013,9 @@ static void SetSearch(const std::wstring& text)
 static void FocusSearch()
 {
     g_searchFocused = true;
+    // Focusing a field that already has a query selects it, so the next typed
+    // character replaces the old query instead of appending to it.
+    g_searchSelectAll = !g_search.empty();
     g_focusStrip = false;
     if (g_overlay)
         SetTimer(g_overlay, kTimerCaret, 530, nullptr);
@@ -2970,7 +3030,8 @@ static void UpdateHover(int x, int y)
     g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
     g_hoverCreate = g_hoverSearch = g_hoverSearchClear = false;
 
-    if (Contains(g_layout.search, static_cast<float>(x), static_cast<float>(y)))
+    if (SearchVisible() &&
+        Contains(g_layout.search, static_cast<float>(x), static_cast<float>(y)))
         g_hoverSearch = true;
     if (!g_search.empty() &&
         Contains(g_searchClearRect, static_cast<float>(x), static_cast<float>(y)))
@@ -3030,6 +3091,15 @@ static void OnLeftClick(int x, int y)
     {
         FocusSearch();
         return;
+    }
+
+    // Clicking anywhere else takes the field out of focus, so the letter keys
+    // go back to navigation and a hidden search bar stays hidden.
+    if (g_searchFocused)
+    {
+        g_searchFocused = false;
+        g_searchSelectAll = false;
+        InvalidateRect(g_overlay, nullptr, FALSE);
     }
 
     for (int i = 0; i < static_cast<int>(g_cards.size()); i++)
@@ -3130,9 +3200,21 @@ static void OnKeyDown(WPARAM key)
         {
             ActivateEntry(g_selected);
         }
-        else if (key == VK_BACK && !g_search.empty())
+        else if (key == VK_BACK)
         {
-            SetSearch(g_search.substr(0, g_search.size() - 1));
+            if (g_searchSelectAll)
+                SetSearch(L"");
+            else if (!g_search.empty())
+                SetSearch(g_search.substr(0, g_search.size() - 1));
+        }
+        else if (g_searchSelectAll &&
+                 (key == VK_DELETE || key == VK_LEFT || key == VK_RIGHT ||
+                  key == VK_HOME || key == VK_END))
+        {
+            // The selection goes away as soon as the user reaches for the
+            // caret; there is no caret movement to model in this field.
+            g_searchSelectAll = false;
+            InvalidateRect(g_overlay, nullptr, FALSE);
         }
         return;
     }
@@ -3404,7 +3486,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         const float fx = static_cast<float>(pt.x);
         const float fy = static_cast<float>(pt.y);
 
-        bool overText = Contains(g_layout.search, fx, fy) && !g_search.empty();
+        bool overText =
+            SearchVisible() && Contains(g_layout.search, fx, fy) && !g_search.empty();
         if (!overText && IsRenamingDesktop())
         {
             for (const PillView& pill : g_pills)
@@ -3500,7 +3583,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             }
         }
 
-        SetSearch(g_search + ch);
+        SetSearch(g_searchSelectAll ? std::wstring(1, ch) : g_search + ch);
         return 0;
     }
 

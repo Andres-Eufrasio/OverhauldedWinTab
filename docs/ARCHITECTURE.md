@@ -1,6 +1,6 @@
 # Architecture
 
-OverhauldedWin Tab is a single Windhawk mod that runs in two different processes.
+OverhauldedWinTab is a single Windhawk mod that runs in two different processes.
 The split exists because of how Windows registers the `Win` + `Tab` hotkey.
 
 ```
@@ -215,8 +215,13 @@ State is intentionally small:
 The search field is never typed into until it has focus: click it, or press `/`.
 Until then `WM_CHAR` only routes the navigation keys (`h` `j` `k` `l` `x`), so a
 query that contains those letters can never collide with a command. While the
-field is focused, `OnKeyDown` handles only `Esc`, `Enter` and `Backspace` so that
-keys such as `Delete` or `N` cannot trigger an action mid-query.
+field is focused, `OnKeyDown` handles only `Esc`, `Enter`, `Backspace` and
+selection dismissal so that keys such as `Delete` or `N` cannot trigger an action
+mid-query. Focusing a field that already holds a query sets `g_searchSelectAll`,
+which makes the next typed character replace the query. With
+`Appearance.AlwaysShowSearch` off, `SearchVisible()` collapses the field in
+`UpdateLayout` until it is focused or non-empty; `Appearance.ShowHints` hides only
+the hint line.
 
 `ShowOverlay` clears the transient state (query, page, selection, focus, rename,
 hover) *before* it calls `RebuildWindowList`. That order matters: the rebuild
