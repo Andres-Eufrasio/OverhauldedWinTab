@@ -1903,6 +1903,15 @@ static void SetSearch(const std::wstring& text)
     InvalidateRect(g_overlay, nullptr, FALSE);
 }
 
+static void FocusSearch()
+{
+    g_searchFocused = true;
+    g_focusStrip = false;
+    if (g_overlay)
+        SetTimer(g_overlay, kTimerCaret, 530, nullptr);
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // INPUT
 
@@ -1952,15 +1961,13 @@ static void OnLeftClick(int x, int y)
     if (!g_search.empty() && Contains(g_searchClearRect, fx, fy))
     {
         SetSearch(L"");
-        g_searchFocused = true;
+        FocusSearch();
         return;
     }
 
     if (Contains(g_layout.search, fx, fy))
     {
-        g_searchFocused = true;
-        g_focusStrip = false;
-        InvalidateRect(g_overlay, nullptr, FALSE);
+        FocusSearch();
         return;
     }
 
@@ -2206,8 +2213,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         const WCHAR ch = static_cast<WCHAR>(wParam);
         if (ch >= 32 && ch != 127)
         {
-            g_searchFocused = true;
             SetSearch(g_search + ch);
+            FocusSearch();
         }
         return 0;
     }
