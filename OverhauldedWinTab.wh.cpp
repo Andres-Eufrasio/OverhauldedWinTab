@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWin Tab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.1.0
+// @version         0.2.0
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -26,6 +26,10 @@ It is the Task View counterpart of
 [OverhauldedWin Alt+Tab](https://github.com/IMiloDev/OverhauldedWin) and is built
 from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 
+## Screenshot
+
+> Placeholder. Add a screenshot under `assets/` and reference it here.
+
 ## Features
 
 - Full-screen Task View overlay for the active monitor
@@ -33,27 +37,82 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Adaptive card grid that scales with the number of windows
 - Type-to-filter search across window titles and applications
 - Virtual desktop strip with switching, creating and closing
+- Rename virtual desktops inline (saved the same way Windows stores them)
+- Move a window to another virtual desktop without leaving the overview
+- Vim-style navigation (`h` `j` `k` `l`, `/`, `x`)
+- Customizable background: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent,
+  with a configurable tint color and opacity
 - Keyboard and mouse navigation
 - Smooth open / close animation with resolution-aware UI scaling
 - High-DPI aware, per-monitor
 - Lightweight: the Explorer hook only forwards the hotkey
+- Background execution for instant activation
+
+## Design
+
+OverhauldedWin Tab keeps the visual language of OverhauldedWin: a dark obsidian
+panel, rounded cards, subtle downward shadows, an accent highlight for the
+selected window, and a configurable backdrop (Acrylic, Mica, Mica Alt, Blur,
+Solid or transparent) behind the overview.
+
+The overview is a persistent window prepared in the background, so `Win` + `Tab`
+opens immediately instead of building the interface from scratch every time.
 
 ## Controls
 
 | Input | Action |
 | ----- | ------ |
 | `Win` + `Tab` | Open or close the overview |
-| `Esc` | Close the overview (or clear the search) |
-| `Enter` | Switch to the selected window / desktop |
+| `Esc` | Close the overview (or clear the search / cancel a rename) |
+| `Enter` | Switch to the selected window / desktop, or save a rename |
 | `Delete` | Close the selected window / desktop |
 | `Arrows` | Move through the window grid |
 | `Tab` | Toggle between the grid and the desktop strip |
+| `Ctrl` + `Left` / `Right` | Switch to the previous / next virtual desktop |
+| `Shift` + `Left` / `Right` | Move the selected window to the previous / next desktop |
+| `F2` | Rename the selected (or current) virtual desktop |
+| `N` | Create a new virtual desktop (strip focused) |
+| `h` `j` `k` `l` | Vim movement (move through the grid / desktop strip) |
+| `/` | Focus the search field |
+| `x` | Close the selected window (Vim) |
 | Printable keys | Filter windows by title or application |
 | Left click | Activate a window or switch desktop |
+| Right click a desktop | Rename that virtual desktop |
 | Middle click on a card | Close that window |
 | Click `+` on the strip | Create a new virtual desktop |
 | Click `x` on the active desktop | Close the current virtual desktop |
 | Mouse wheel | Move through grid pages |
+
+Vim keys only move the selection while the search field is empty, so a query
+that contains `h`, `j`, `k`, `l` or `x` still works once you start typing or
+press `/`. Set **Vim navigation** to `off` to disable them.
+
+## Settings
+
+| Setting | Description |
+| ------- | ----------- |
+| Accent color | Accent color used for highlights, in `#RRGGBB` format |
+| Background | Backdrop effect: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent |
+| Background color | Tint color of the overview panel, in `#RRGGBB` format |
+| Background opacity | How strong the panel tint is over the backdrop (`0`-`100`) |
+| Show window icons | Show each window's application icon in its card header |
+| Animation speed | Relative speed of the open and close animations |
+| Close when focus is lost | Dismiss the overview when it loses activation |
+| Wrap grid navigation | Arrow keys wrap around the edges of the grid |
+| Vim navigation | Enable `h` `j` `k` `l`, `/` and `x` navigation keys |
+
+**Background** controls what sits behind the panel:
+
+- **Acrylic** – blurred desktop with a translucent tint (default)
+- **Mica** – Windows 11 Mica material
+- **Mica Alt** – Windows 11 Mica Alt material
+- **Blur** – classic blur without the acrylic noise
+- **Solid** – opaque panel, ignores the opacity setting
+- **Transparent** – no backdrop effect; the live desktop shows through,
+  tinted only by the background color and opacity
+
+Lower **Background opacity** to see more of the desktop behind the overview;
+`0` is fully transparent and `100` is fully opaque.
 
 ## How it works
 
@@ -65,17 +124,52 @@ The mod runs in two places:
 2. A dedicated `windhawk.exe` tool process owns the persistent overlay window,
    the renderer and all input handling.
 
-See `docs/ARCHITECTURE.md` for the full design.
+Virtual desktop names are written to the same per-desktop registry keys Windows
+uses (`HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name`), so renames are
+picked up by Windows and other tools. Moving a window to another desktop uses
+the documented `IVirtualDesktopManager::MoveWindowToDesktop` API rather than
+synthesized hotkeys.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 
 ## Compatibility
 
-Designed for Windows 11. Running multiple mods that replace Task View or the
-task switcher at the same time may cause conflicts.
+Designed for Windows 11.
+
+The project is under active development, so behavior may vary depending on:
+
+- Display scaling
+- Multiple-monitor configurations
+- Windows configuration
+- Application window types
+- Other Task View / task-switcher modifications
+
+Running multiple mods that replace Task View or the task switcher at the same
+time may cause conflicts.
+
+## Development
+
+Requirements:
+
+- [Windhawk](https://windhawk.net/) with the compiler installed
+- The `WorkingDirectory` of this repository opened in the Windhawk mod editor
+
+`build.ps1` performs a standalone syntax and link check of the mod with the
+compiler bundled by Windhawk:
+
+```powershell
+.\build.ps1
+```
 
 ## License
 
-MIT. The Explorer forwarding patterns are adapted from **OverhauldedWin** by
-IMiloDev. See `LICENSE`.
+MIT. The Explorer hotkey forwarding patterns are adapted from **OverhauldedWin**
+by [IMiloDev](https://github.com/IMiloDev). See the [LICENSE](LICENSE) file for
+the complete license text.
+
+---
+
+OverhauldedWin Tab is a pre-release project.
 */
 // ==/WindhawkModReadme==
 
@@ -85,9 +179,22 @@ IMiloDev. See `LICENSE`.
     - AccentColor: "#4CC2FF"
       $name: Accent color
       $description: Accent color used for highlights, in #RRGGBB format.
-    - PanelOpacity: 60
-      $name: Panel opacity
-      $description: Opacity of the overview panel behind the window grid (0-100). Default - 60.
+    - Background: "acrylic"
+      $name: Background
+      $description: Backdrop effect behind the overview.
+      $options:
+      - "acrylic": Acrylic
+      - "mica": Mica
+      - "micaalt": Mica Alt
+      - "blur": Blur
+      - "solid": Solid
+      - "none": Transparent
+    - BackgroundColor: "#0A0D12"
+      $name: Background color
+      $description: Tint color of the overview panel, in #RRGGBB format.
+    - BackgroundOpacity: 70
+      $name: Background opacity
+      $description: How strong the panel tint is over the backdrop (0-100). 0 is fully transparent, 100 is fully opaque.
     - ShowWindowIcons: true
       $name: Show window icons
       $description: Show each window's application icon in the card header.
@@ -107,6 +214,9 @@ IMiloDev. See `LICENSE`.
     - WrapNavigation: true
       $name: Wrap grid navigation
       $description: Arrow keys wrap around the edges of the grid.
+    - VimNavigation: true
+      $name: Vim navigation
+      $description: Use h/j/k/l to move, / to focus the search and x to close the selected window.
   $name: Behavior
 */
 // ==/WindhawkModSettings==
@@ -235,13 +345,27 @@ static bool ContainsInsensitive(const std::wstring& haystackLower,
 
 static HINSTANCE g_hModule = nullptr;
 
+// Background modes.
+enum class BackgroundMode
+{
+    Acrylic,
+    Mica,
+    MicaAlt,
+    Blur,
+    Solid,
+    None
+};
+
 // Settings.
 static UINT32 g_accent = 0xFF4CC2FF;
-static float g_panelOpacity = 0.60f;
+static BackgroundMode g_backgroundMode = BackgroundMode::Acrylic;
+static UINT32 g_backgroundColor = 0xFF0A0D12;
+static float g_backgroundOpacity = 0.70f;
 static bool g_showIcons = true;
 static int g_animSpeedPercent = 100;
 static bool g_closeOnFocusLoss = true;
 static bool g_wrapNavigation = true;
+static bool g_vimNavigation = true;
 
 // Overlay window and presentation.
 static HWND g_overlay = nullptr;
@@ -279,6 +403,10 @@ static int g_hoverPillClose = -1;
 static bool g_hoverCreate = false;
 static bool g_hoverSearch = false;
 static bool g_hoverSearchClear = false;
+
+// Inline virtual desktop rename.
+static int g_renameDesktop = -1;
+static std::wstring g_renameText;
 
 // Data model.
 struct WindowEntry
@@ -359,6 +487,14 @@ static UINT g_hotkeyMessage = 0;
 // Forward declarations.
 static void ReleaseThumbnails();
 static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive);
+static void RebuildWindowList();
+static void RefreshDesktops();
+static void MoveSelectedWindowToDesktop(int delta);
+static void SwitchDesktopBy(int delta);
+static void BeginRenameDesktop(int index);
+static void CommitRenameDesktop();
+static void CancelRenameDesktop();
+static float BackgroundScrimAlpha();
 
 // Windhawk tool mod callbacks.
 BOOL WhTool_ModInit();
@@ -418,8 +554,18 @@ static void LoadSettings()
     };
 
     g_accent = parseColor(read(L"Appearance.AccentColor"), 0xFF4CC2FF);
-    g_panelOpacity = static_cast<float>(
-        clampInt(Wh_GetIntSetting(L"Appearance.PanelOpacity"), 0, 100)) / 100.0f;
+    g_backgroundColor = parseColor(read(L"Appearance.BackgroundColor"), 0xFF0A0D12);
+    g_backgroundOpacity = static_cast<float>(
+        clampInt(Wh_GetIntSetting(L"Appearance.BackgroundOpacity"), 0, 100)) / 100.0f;
+
+    const std::wstring background = read(L"Appearance.Background");
+    g_backgroundMode = background == L"mica" ? BackgroundMode::Mica
+                     : background == L"micaalt" ? BackgroundMode::MicaAlt
+                     : background == L"blur" ? BackgroundMode::Blur
+                     : background == L"solid" ? BackgroundMode::Solid
+                     : background == L"none" ? BackgroundMode::None
+                     : BackgroundMode::Acrylic;
+
     g_showIcons = Wh_GetIntSetting(L"Appearance.ShowWindowIcons") != 0;
 
     const std::wstring speed = read(L"Appearance.AnimationSpeed");
@@ -428,6 +574,7 @@ static void LoadSettings()
 
     g_closeOnFocusLoss = Wh_GetIntSetting(L"Behavior.CloseOnFocusLoss") != 0;
     g_wrapNavigation = Wh_GetIntSetting(L"Behavior.WrapNavigation") != 0;
+    g_vimNavigation = Wh_GetIntSetting(L"Behavior.VimNavigation") != 0;
 }
 
 static float AnimationSeconds(float baseSeconds)
@@ -963,7 +1110,133 @@ static void RefreshDesktops()
         g_desktopSelected = g_currentDesktop;
 }
 
+// --- Virtual desktop names --------------------------------------------------
+
+static bool WriteDesktopName(const GUID& id, const std::wstring& name)
+{
+    WCHAR guidText[64] = {};
+    if (StringFromGUID2(id, guidText, ARRAYSIZE(guidText)) <= 0)
+        return false;
+
+    const std::wstring prefix =
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VirtualDesktops\\Desktops\\";
+    const std::wstring key = prefix + guidText;
+
+    HKEY handle = nullptr;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, nullptr, 0, KEY_SET_VALUE,
+                        nullptr, &handle, nullptr) != ERROR_SUCCESS)
+        return false;
+
+    bool ok = true;
+    if (name.empty())
+    {
+        const LONG result = RegDeleteValueW(handle, L"Name");
+        ok = result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND;
+    }
+    else
+    {
+        ok = RegSetValueExW(handle, L"Name", 0, REG_SZ,
+                            reinterpret_cast<const BYTE*>(name.c_str()),
+                            static_cast<DWORD>((name.size() + 1) * sizeof(WCHAR))) ==
+             ERROR_SUCCESS;
+    }
+
+    RegCloseKey(handle);
+    return ok;
+}
+
+static void CommitRenameDesktop()
+{
+    if (g_renameDesktop < 0 || g_renameDesktop >= static_cast<int>(g_desktops.size()))
+    {
+        g_renameDesktop = -1;
+        g_renameText.clear();
+        return;
+    }
+
+    std::wstring name = g_renameText;
+    // Trim surrounding whitespace; empty means "remove the custom name".
+    size_t first = name.find_first_not_of(L" \t");
+    size_t last = name.find_last_not_of(L" \t");
+    name = first == std::wstring::npos ? L"" : name.substr(first, last - first + 1);
+
+    if (WriteDesktopName(g_desktops[g_renameDesktop].id, name))
+        g_desktops[g_renameDesktop].name = name.empty()
+            ? L"Desktop " + std::to_wstring(g_renameDesktop + 1)
+            : name;
+
+    g_renameDesktop = -1;
+    g_renameText.clear();
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
+static void CancelRenameDesktop()
+{
+    g_renameDesktop = -1;
+    g_renameText.clear();
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
+static void BeginRenameDesktop(int index)
+{
+    if (index < 0 || index >= static_cast<int>(g_desktops.size()))
+        return;
+    g_renameDesktop = index;
+    g_renameText = g_desktops[index].name;
+    g_focusStrip = true;
+    g_desktopSelected = index;
+    g_searchFocused = false;
+    if (g_overlay)
+        SetTimer(g_overlay, kTimerCaret, 530, nullptr);
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
+static bool IsRenamingDesktop()
+{
+    return g_renameDesktop >= 0;
+}
+
 // --- Desktop actions --------------------------------------------------------
+
+// Moves the selected window (or the window that opened the overview) to an
+// adjacent virtual desktop using the documented IVirtualDesktopManager API.
+static void MoveSelectedWindowToDesktop(int delta)
+{
+    if (!g_vdm || g_desktops.empty())
+        return;
+
+    const int target = g_currentDesktop + delta;
+    if (target < 0 || target >= static_cast<int>(g_desktops.size()))
+        return;
+
+    HWND window = nullptr;
+    if (g_selected >= 0 && g_selected < static_cast<int>(g_filtered.size()))
+        window = g_windows[g_filtered[g_selected]].hwnd;
+    if (!window || !IsWindow(window))
+        window = g_originWindow;
+    if (!window || !IsWindow(window))
+        return;
+
+    ReleaseThumbnails();
+    if (SUCCEEDED(g_vdm->MoveWindowToDesktop(window, g_desktops[target].id)))
+    {
+        RebuildWindowList();
+        g_desktopSelected = g_currentDesktop;
+    }
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
+// Switches to another virtual desktop while keeping the overview open.
+static void SwitchDesktopBy(int delta)
+{
+    if (g_desktops.empty())
+        return;
+    const int target = g_currentDesktop + delta;
+    if (target < 0 || target >= static_cast<int>(g_desktops.size()))
+        return;
+    g_desktopSelected = target;
+    BeginDesktopAction(target, false, false);
+}
 
 static void SendChord(WORD vk, bool extended)
 {
@@ -1036,9 +1309,13 @@ static void RebuildPills()
                                     ARRAYSIZE(nameWidths));
     for (int i = 0; i < count; i++)
     {
-        float w = 46.0f * s +
-                  static_cast<float>(g_desktops[i].name.size()) * 7.6f * s;
-        w = std::max(112.0f * s, std::min(300.0f * s, w));
+        const bool renaming = g_renameDesktop == i;
+        const std::wstring& shown = renaming ? g_renameText : g_desktops[i].name;
+        float w = 46.0f * s + static_cast<float>(shown.size()) * 7.6f * s;
+        if (renaming)
+            w += 20.0f * s;  // Room for the caret while editing.
+        const float maxW = renaming ? 420.0f * s : 300.0f * s;
+        w = std::max(112.0f * s, std::min(maxW, w));
         if (g_desktops.size() > 1 && i == g_currentDesktop)
             w += 26.0f * s;
         nameWidths[i] = w;
@@ -1341,13 +1618,10 @@ static void RenderScene(HDC dc)
 
     const float s = g_scale;
 
-    // Backdrop scrim. With DWM glass active the panel stays translucent so the
-    // blurred desktop shows through; otherwise it is nearly opaque.
-    const float scrimAlpha = g_glass
-        ? 0.35f + 0.30f * g_panelOpacity
-        : 0.90f + 0.08f * g_panelOpacity;
+    // Backdrop scrim. The tint color and how strongly it covers the backdrop are
+    // configurable; the OS material (acrylic / mica / blur) sits underneath.
     const RectF full = {0.0f, 0.0f, g_layout.w, g_layout.h};
-    FillRound(full, 0.0f, 0xFF05070B, std::min(1.0f, scrimAlpha));
+    FillRound(full, 0.0f, g_backgroundColor, BackgroundScrimAlpha());
 
     // Header title.
     const RectF titleRect = {56.0f * s, 40.0f * s, 340.0f * s, 40.0f * s + 46.0f * s};
@@ -1547,11 +1821,26 @@ static void RenderScene(HDC dc)
                       active ? 0xFF06121C : 0xFFFFFFFF, DWRITE_TEXT_ALIGNMENT_CENTER,
                       0.95f);
 
+        const bool renaming = g_renameDesktop == pill.desktop;
         const RectF nameRect = {pill.rect.l + 40.0f * s, pill.rect.t,
-                                pill.rect.r - (pill.hasClose ? 30.0f * s : 12.0f * s),
+                                pill.rect.r - (pill.hasClose && !renaming ? 30.0f * s
+                                                                         : 12.0f * s),
                                 pill.rect.b};
-        DrawTextBlock(g_desktops[pill.desktop].name, g_fmtPill, nameRect, 0xFFFFFFFF,
-                      DWRITE_TEXT_ALIGNMENT_LEADING, active ? 0.95f : 0.72f);
+        const std::wstring& shownName =
+            renaming ? g_renameText : g_desktops[pill.desktop].name;
+        DrawTextBlock(shownName, g_fmtPill, nameRect, 0xFFFFFFFF,
+                      DWRITE_TEXT_ALIGNMENT_LEADING,
+                      (active || renaming) ? 0.95f : 0.72f);
+
+        if (renaming && ((GetTickCount64() / 530) % 2) == 0)
+        {
+            const float approx = static_cast<float>(g_renameText.size()) * 7.6f * s;
+            const float caretX = std::min(nameRect.r, nameRect.l + approx + 1.0f * s);
+            g_d2dBrush->SetColor(ColorOf(0xFFFFFFFF, 0.85f));
+            g_d2dTarget->DrawLine(D2D1::Point2F(caretX, pill.rect.t + 11.0f * s),
+                                  D2D1::Point2F(caretX, pill.rect.b - 11.0f * s),
+                                  g_d2dBrush, 1.4f * s);
+        }
 
         if (pill.hasClose)
         {
@@ -1586,9 +1875,17 @@ static void RenderScene(HDC dc)
     // Hint line.
     const RectF hintRect = {56.0f * s, g_layout.strip.b + 10.0f * s,
                             g_layout.w - 56.0f * s, g_layout.strip.b + 34.0f * s};
-    DrawTextBlock(L"Enter switch  \u00B7  Delete close  \u00B7  Tab desktops  "
-                  L"\u00B7  type to search",
-                  g_fmtHint, hintRect, 0xFFFFFFFF, DWRITE_TEXT_ALIGNMENT_LEADING, 0.42f);
+    std::wstring hint;
+    if (IsRenamingDesktop())
+        hint = L"Rename desktop  \u00B7  Enter save  \u00B7  Esc cancel";
+    else if (g_focusStrip)
+        hint = L"Enter switch  \u00B7  F2 rename  \u00B7  N new  \u00B7  Delete close  "
+               L"\u00B7  Ctrl+Left/Right switch  \u00B7  Tab windows";
+    else
+        hint = L"Enter switch  \u00B7  Delete close  \u00B7  Shift+Left/Right move to "
+               L"desktop  \u00B7  Tab desktops  \u00B7  / search";
+    DrawTextBlock(hint, g_fmtHint, hintRect, 0xFFFFFFFF, DWRITE_TEXT_ALIGNMENT_LEADING,
+                  0.42f);
 
     // Busy indicator (desktop switching).
     if (g_busy)
@@ -1686,6 +1983,46 @@ static void UpdateMonitorForWindow(HWND window)
     g_scale = static_cast<float>(g_dpi) / 96.0f;
 }
 
+struct AccentPolicy
+{
+    int state;
+    int flags;
+    DWORD gradientColor;
+    int animationId;
+};
+
+struct WindowCompositionAttributeData
+{
+    int attribute;
+    void* data;
+    SIZE_T sizeOfData;
+};
+
+static void SetAccentPolicy(HWND hwnd, int state, DWORD gradientColor)
+{
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    typedef BOOL(WINAPI * SetWindowCompositionAttributeFn)(HWND,
+                                                           WindowCompositionAttributeData*);
+    SetWindowCompositionAttributeFn setComposition = user32
+        ? reinterpret_cast<SetWindowCompositionAttributeFn>(
+              GetProcAddress(user32, "SetWindowCompositionAttribute"))
+        : nullptr;
+    if (!setComposition)
+        return;
+
+    AccentPolicy policy = {};
+    policy.state = state;
+    policy.flags = 2;  // ACCENT_FLAG_DRAW_ALL_BORDERS
+    policy.gradientColor = gradientColor;
+    WindowCompositionAttributeData data = {};
+    data.attribute = 19;  // WCA_ACCENT_POLICY
+    data.data = &policy;
+    data.sizeOfData = sizeof(policy);
+    setComposition(hwnd, &data);
+}
+
+// Applies the configured backdrop effect. The D2D scrim drawn on top provides
+// the actual tint, so the OS effect only needs to supply the blur/material.
 static void ApplyBackdrop(HWND hwnd)
 {
     MARGINS margins = {-1, -1, -1, -1};
@@ -1699,39 +2036,52 @@ static void ApplyBackdrop(HWND hwnd)
     DWORD border = 0xFFFFFFFE /* DWMWA_COLOR_NONE */;
     DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
 
-    struct AccentPolicy
-    {
-        int state;
-        int flags;
-        DWORD gradientColor;
-        int animationId;
-    };
-    struct WindowCompositionAttributeData
-    {
-        int attribute;
-        void* data;
-        SIZE_T sizeOfData;
-    };
+    // Reset any previously applied system backdrop / mica / accent before we
+    // apply the one that is configured now.
+    DWORD noBackdrop = 1 /* DWMSBT_NONE */;
+    DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &noBackdrop,
+                          sizeof(noBackdrop));
+    BOOL micaDisabled = FALSE;
+    DwmSetWindowAttribute(hwnd, 1029 /* DWMWA_MICA_EFFECT */, &micaDisabled,
+                          sizeof(micaDisabled));
+    SetAccentPolicy(hwnd, 0 /* ACCENT_DISABLED */, 0);
 
-    HMODULE user32 = GetModuleHandleW(L"user32.dll");
-    typedef BOOL(WINAPI * SetWindowCompositionAttributeFn)(HWND,
-                                                           WindowCompositionAttributeData*);
-    SetWindowCompositionAttributeFn setComposition = user32
-        ? reinterpret_cast<SetWindowCompositionAttributeFn>(
-              GetProcAddress(user32, "SetWindowCompositionAttribute"))
-        : nullptr;
-    if (setComposition)
+    switch (g_backgroundMode)
     {
-        AccentPolicy policy = {};
-        policy.state = 4;  // ACCENT_ENABLE_ACRYLICBLURBEHIND
-        policy.flags = 2;
-        policy.gradientColor = 0x99000000;
-        WindowCompositionAttributeData data = {};
-        data.attribute = 19;  // WCA_ACCENT_POLICY
-        data.data = &policy;
-        data.sizeOfData = sizeof(policy);
-        setComposition(hwnd, &data);
+    case BackgroundMode::Acrylic:
+        // Pure blur; the D2D scrim supplies the tint so opacity is consistent
+        // across every mode.
+        SetAccentPolicy(hwnd, 4 /* ACCENT_ENABLE_ACRYLICBLURBEHIND */, 0x00000000);
+        break;
+    case BackgroundMode::Blur:
+        SetAccentPolicy(hwnd, 3 /* ACCENT_ENABLE_BLURBEHIND */, 0x00000000);
+        break;
+    case BackgroundMode::Mica:
+    case BackgroundMode::MicaAlt:
+    {
+        DWORD type = g_backgroundMode == BackgroundMode::Mica
+                         ? 2 /* DWMSBT_MAINWINDOW */
+                         : 4 /* DWMSBT_TABBEDWINDOW (Mica Alt) */;
+        DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &type, sizeof(type));
+        BOOL micaEnabled = TRUE;
+        DwmSetWindowAttribute(hwnd, 1029 /* DWMWA_MICA_EFFECT */, &micaEnabled,
+                              sizeof(micaEnabled));
+        break;
     }
+    case BackgroundMode::Solid:
+    case BackgroundMode::None:
+        break;
+    }
+}
+
+// Opacity (0..1) that the solid-color scrim uses on top of the backdrop.
+static float BackgroundScrimAlpha()
+{
+    if (!g_glass)
+        return 0.96f;  // Without glass compositing a low alpha would look broken.
+    if (g_backgroundMode == BackgroundMode::Solid)
+        return 1.0f;
+    return std::max(0.0f, std::min(1.0f, g_backgroundOpacity * 0.92f));
 }
 
 static void ShowOverlay()
@@ -1755,6 +2105,8 @@ static void ShowOverlay()
     g_desktopSelected = g_currentDesktop;
     g_search.clear();
     g_searchFocused = false;
+    g_renameDesktop = -1;
+    g_renameText.clear();
     g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
     g_hoverCreate = g_hoverSearch = g_hoverSearchClear = false;
     g_busy = false;
@@ -1958,6 +2310,17 @@ static void OnLeftClick(int x, int y)
     const float fx = static_cast<float>(x);
     const float fy = static_cast<float>(y);
 
+    if (IsRenamingDesktop())
+    {
+        for (const PillView& pill : g_pills)
+        {
+            if (pill.desktop == g_renameDesktop && Contains(pill.rect, fx, fy))
+                return;  // Clicking the field keeps editing.
+        }
+        CommitRenameDesktop();
+        return;
+    }
+
     if (!g_search.empty() && Contains(g_searchClearRect, fx, fy))
     {
         SetSearch(L"");
@@ -2014,6 +2377,25 @@ static void OnLeftClick(int x, int y)
 
 static void OnKeyDown(WPARAM key)
 {
+    if (IsRenamingDesktop())
+    {
+        if (key == VK_RETURN)
+            CommitRenameDesktop();
+        else if (key == VK_ESCAPE)
+            CancelRenameDesktop();
+        else if (key == VK_BACK)
+        {
+            if (!g_renameText.empty())
+                g_renameText.pop_back();
+            InvalidateRect(g_overlay, nullptr, FALSE);
+        }
+        // Everything else is ignored; printable input arrives via WM_CHAR.
+        return;
+    }
+
+    const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+
     switch (key)
     {
     case VK_ESCAPE:
@@ -2049,6 +2431,10 @@ static void OnKeyDown(WPARAM key)
             CloseEntry(g_selected);
         return;
 
+    case VK_F2:
+        BeginRenameDesktop(g_focusStrip ? g_desktopSelected : g_currentDesktop);
+        return;
+
     case VK_TAB:
         g_focusStrip = !g_focusStrip;
         if (g_focusStrip)
@@ -2062,6 +2448,16 @@ static void OnKeyDown(WPARAM key)
         return;
 
     case VK_LEFT:
+        if (shift && !g_focusStrip)
+        {
+            MoveSelectedWindowToDesktop(-1);
+            return;
+        }
+        if (ctrl)
+        {
+            SwitchDesktopBy(-1);
+            return;
+        }
         if (g_focusStrip)
         {
             g_desktopSelected = std::max(0, g_desktopSelected - 1);
@@ -2074,6 +2470,16 @@ static void OnKeyDown(WPARAM key)
         return;
 
     case VK_RIGHT:
+        if (shift && !g_focusStrip)
+        {
+            MoveSelectedWindowToDesktop(1);
+            return;
+        }
+        if (ctrl)
+        {
+            SwitchDesktopBy(1);
+            return;
+        }
         if (g_focusStrip)
         {
             g_desktopSelected = std::min(static_cast<int>(g_desktops.size()) - 1,
@@ -2168,6 +2574,26 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         return 0;
     }
 
+    case WM_RBUTTONUP:
+    {
+        const int x = GET_X_LPARAM(lParam);
+        const int y = GET_Y_LPARAM(lParam);
+        for (const PillView& pill : g_pills)
+        {
+            if (!Contains(pill.rect, static_cast<float>(x), static_cast<float>(y)))
+                continue;
+            if (IsRenamingDesktop())
+            {
+                if (pill.desktop == g_renameDesktop)
+                    return 0;  // Already editing this desktop.
+                CommitRenameDesktop();
+            }
+            BeginRenameDesktop(pill.desktop);
+            break;
+        }
+        return 0;
+    }
+
     case WM_MBUTTONUP:
     {
         const int x = GET_X_LPARAM(lParam);
@@ -2211,11 +2637,73 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
     case WM_CHAR:
     {
         const WCHAR ch = static_cast<WCHAR>(wParam);
-        if (ch >= 32 && ch != 127)
+        if (ch < 32 || ch == 127)
+            return 0;
+
+        if (IsRenamingDesktop())
         {
-            SetSearch(g_search + ch);
-            FocusSearch();
+            if (g_renameText.size() < 48)
+                g_renameText.push_back(ch);
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
         }
+
+        WCHAR lower = ch;
+        if (lower >= L'A' && lower <= L'Z')
+            lower = static_cast<WCHAR>(lower - L'A' + L'a');
+
+        // Vim movement only applies before the search is being used, so typing a
+        // query that contains h/j/k/l/x still works once the field is active.
+        const bool freshInput = !g_searchFocused && g_search.empty();
+        if (g_vimNavigation && freshInput && lower != L'/')
+        {
+            switch (lower)
+            {
+            case L'h':
+                if (g_focusStrip)
+                {
+                    g_desktopSelected = std::max(0, g_desktopSelected - 1);
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+                else
+                    MoveSelection(-1, 0);
+                return 0;
+            case L'l':
+                if (g_focusStrip)
+                {
+                    g_desktopSelected =
+                        std::min(static_cast<int>(g_desktops.size()) - 1,
+                                 g_desktopSelected + 1);
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+                else
+                    MoveSelection(1, 0);
+                return 0;
+            case L'j':
+                if (!g_focusStrip)
+                    MoveSelection(0, 1);
+                return 0;
+            case L'k':
+                if (!g_focusStrip)
+                    MoveSelection(0, -1);
+                return 0;
+            case L'x':
+                if (!g_focusStrip)
+                    CloseEntry(g_selected);
+                return 0;
+            default:
+                break;
+            }
+        }
+
+        if (freshInput && ch == L'/')
+        {
+            FocusSearch();
+            return 0;
+        }
+
+        SetSearch(g_search + ch);
+        FocusSearch();
         return 0;
     }
 
@@ -2288,7 +2776,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         }
         if (wParam == kTimerCaret)
         {
-            if (g_searchFocused)
+            if (g_searchFocused || IsRenamingDesktop())
                 InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
@@ -2466,6 +2954,8 @@ static DWORD WINAPI UiThreadProc(LPVOID)
             if (message.hwnd == nullptr && message.message == WM_UI_SETTINGS)
             {
                 LoadSettings();
+                if (g_overlay)
+                    ApplyBackdrop(g_overlay);
                 InvalidateRect(g_overlay, nullptr, FALSE);
                 continue;
             }

@@ -82,8 +82,18 @@ Window previews are real DWM thumbnails:
   card header, never over the preview.
 
 The panel background is a translucent scrim over DWM glass
-(`DwmExtendFrameIntoClientArea` with `-1` margins) plus an optional acrylic
-accent, with a nearly opaque scrim as a fallback when glass is unavailable.
+(`DwmExtendFrameIntoClientArea` with `-1` margins). The scrim color and alpha are
+configurable, and the effect underneath is selectable:
+
+- **Acrylic** – `SetWindowCompositionAttribute` with `ACCENT_ENABLE_ACRYLICBLURBEHIND`
+- **Blur** – `ACCENT_ENABLE_BLURBEHIND`
+- **Mica** / **Mica Alt** – `DWMWA_SYSTEMBACKDROP_TYPE` (`DWMSBT_MAINWINDOW` /
+  `DWMSBT_TABBEDWINDOW`) plus `DWMWA_MICA_EFFECT` for older builds
+- **Solid** / **Transparent** – no OS effect; the scrim alone is drawn
+
+The OS effect only supplies the blur/material (its tint is left transparent) so
+that the D2D scrim provides one consistent color and opacity across every mode.
+If DWM glass is unavailable the scrim is forced nearly opaque as a fallback.
 
 ## 4. Window list
 
@@ -117,6 +127,12 @@ would press (`Win` + `Ctrl` + `Left`/`Right`/`D`/`F4`) injected with
 shell to settle, and re-enumerates windows and desktops. This avoids relying on
 undocumented desktop COM interfaces whose vtable changes between Windows builds.
 
+Desktop names are read from
+`HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name` and written back to the
+same key when the user renames a desktop, so renames are picked up by Windows
+and other tools. Moving a window between desktops uses the documented
+`IVirtualDesktopManager::MoveWindowToDesktop`, which needs no synthesized input.
+
 ## 6. Interaction model
 
 State is intentionally small:
@@ -126,6 +142,13 @@ State is intentionally small:
 - `Tab` toggles focus between the grid and the desktop strip.
 - `UpdateLayout` computes both the scene geometry and the per-card / per-pill hit
   rectangles in physical pixels, so mouse hit testing and rendering always agree.
+- `g_renameDesktop` / `g_renameText` hold the inline desktop rename editor.
+
+Vim navigation (`h` `j` `k` `l`, `/`, `x`) only engages while the search field is
+empty and unfocused, so a search query that contains those letters still works
+once typing has started. Unmodified arrow keys keep their original meaning;
+`Ctrl` + `Left`/`Right` switches desktops and `Shift` + `Left`/`Right` moves the
+selected window to an adjacent desktop.
 
 Activating a window hides the overlay immediately (no reverse animation) and
 then restores and foregrounds the target. Closing a window posts `WM_CLOSE`,
