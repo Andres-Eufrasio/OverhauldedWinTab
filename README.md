@@ -92,13 +92,14 @@ contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
 
 **Background** controls what sits behind the panel:
 
-- **Acrylic** – the Windows 11 acrylic material: a frosted, tinted blur of the
-  desktop, with the panel tint drawn on top (default)
+- **Acrylic** – a frosted, tinted blur of whatever is behind the overview, with
+  the panel tint drawn on top (default)
 - **Mica** – the Windows 11 Mica material. Mica is a flat, wallpaper-tinted
-  surface rather than a blur
-- **Mica Alt** – the Windows 11 Mica Alt material
-- **Blur** – alias of Acrylic; Windows 11 no longer ships a separate Aero-style
-  blur
+  surface rather than a blur, so the desktop behind the overview does not show
+  through
+- **Mica Alt** – the Windows 11 Mica Alt variant, also wallpaper-tinted
+- **Blur** – the same blur as Acrylic without the acrylic tint, so more of the
+  desktop shows through
 - **Solid** – an opaque panel; ignores the opacity setting
 - **Transparent** – no backdrop effect; the live desktop shows through
 

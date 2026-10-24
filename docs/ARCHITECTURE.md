@@ -83,23 +83,33 @@ Window previews are real DWM thumbnails:
 
 The panel background is a translucent scrim over DWM glass
 (`DwmExtendFrameIntoClientArea` with `-1` margins). The scrim color and alpha are
-configurable, and the material underneath is selectable. Every material goes
-through the DWM system backdrop (`DWMWA_SYSTEMBACKDROP_TYPE`), followed by a
-`WM_NCACTIVATE` nudge so DWM paints it:
+configurable, and the material underneath is selectable:
 
-- **Acrylic** – `DWMSBT_TRANSIENTWINDOW` (Windows 11's acrylic material)
-- **Blur** – alias of Acrylic (see below)
-- **Mica** / **Mica Alt** – `DWMSBT_MAINWINDOW` / `DWMSBT_TABBEDWINDOW`; Mica
-  is a flat, wallpaper-tinted surface, not a blur
+- **Acrylic** – `DWMSBT_TRANSIENTWINDOW` plus the accent policy's acrylic blur
+  with a fully transparent gradient
+- **Blur** – the accent policy's Aero blur with a fully transparent gradient,
+  without DWM's tinted material
+- **Mica** / **Mica Alt** – `DWMSBT_MAINWINDOW` / `DWMSBT_TABBEDWINDOW`; these
+  are opaque, wallpaper-tinted surfaces, not blur
 - **Solid** / **Transparent** – no OS effect; the scrim alone is drawn
 
-`SetWindowCompositionAttribute` (`ACCENT_ENABLE_ACRYLICBLURBEHIND` /
-`ACCENT_ENABLE_BLURBEHIND`) is only kept as a fallback for builds where DWM
-rejects the system backdrop. Measured on Windows 11 build 26300 it is broken: an
-acrylic accent renders a flat fill or solid black (a 400x300 sample of the client
-area was either uniform black or exactly the gradient color, never a blur) and
-`DwmEnableBlurBehindWindow` does not change that. `DWMSBT_TRANSIENTWINDOW` does
-render a real material, which is why Acrylic and Blur both use it.
+Every material application is followed by a `WM_NCACTIVATE` nudge so DWM paints
+it. Measured on Windows 11 build 26300 against a real fullscreen overlay:
+
+- `DWMSBT_TRANSIENTWINDOW` on its own paints a **flat, dark fill** that shows no
+  trace of the windows behind it.
+- The accent policy (`SetWindowCompositionAttribute`,
+  `ACCENT_ENABLE_ACRYLICBLURBEHIND` / `ACCENT_ENABLE_BLURBEHIND`) does render the
+  blur. Its `gradientColor` is the tint, so a fully transparent gradient
+  (`0x00000000`) leaves a clean blur of whatever is behind the window. Passing an
+  opaque gradient is what makes it come out as an exact solid fill — that is why
+  the accent was previously written off as broken.
+- The accent only takes effect when it is applied **while the window is still
+  hidden**, i.e. before the `SWP_SHOWWINDOW` in `ShowOverlay()`. Applying it after
+  the window is on screen leaves the flat fill.
+- `DwmEnableBlurBehindWindow` has no visible effect.
+- Mica and Mica Alt use the system backdrop and are conventionally opaque, so
+  the desktop behind the overview does not show through them.
 
 The OS material is requested without a tint: DWM supplies the material and the
 Direct2D scrim then supplies the color and opacity for every mode through one

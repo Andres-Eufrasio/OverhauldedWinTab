@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWin Tab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.2.3
+// @version         0.2.4
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -107,13 +107,14 @@ contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Set
 
 **Background** controls what sits behind the panel:
 
-- **Acrylic** – the Windows 11 acrylic material: a frosted, tinted blur of the
-  desktop, with the panel tint drawn on top (default)
+- **Acrylic** – a frosted, tinted blur of whatever is behind the overview, with
+  the panel tint drawn on top (default)
 - **Mica** – the Windows 11 Mica material. Mica is a flat, wallpaper-tinted
-  surface rather than a blur
-- **Mica Alt** – the Windows 11 Mica Alt material
-- **Blur** – alias of Acrylic; Windows 11 no longer ships a separate Aero-style
-  blur
+  surface rather than a blur, so the desktop behind the overview does not show
+  through
+- **Mica Alt** – the Windows 11 Mica Alt variant, also wallpaper-tinted
+- **Blur** – the same blur as Acrylic without the acrylic tint, so more of the
+  desktop shows through
 - **Solid** – an opaque panel; ignores the opacity setting
 - **Transparent** – no backdrop effect; the live desktop shows through
 
@@ -2256,20 +2257,6 @@ static bool SetAccentPolicy(HWND hwnd, int state, int flags, DWORD gradientColor
     return setComposition(hwnd, &data) != FALSE;
 }
 
-// Blurs the whole client area. Required by the acrylic accent on Windows 11.
-static bool EnableBlurBehind(HWND hwnd)
-{
-    DWM_BLURBEHIND blur = {};
-    blur.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION | DWM_BB_TRANSITIONONMAXIMIZED;
-    blur.fEnable = TRUE;
-    blur.fTransitionOnMaximized = TRUE;
-    blur.hRgnBlur = CreateRectRgn(0, 0, -1, -1);
-    const BOOL ok = DwmEnableBlurBehindWindow(hwnd, &blur);
-    if (blur.hRgnBlur)
-        DeleteObject(blur.hRgnBlur);
-    return ok != FALSE;
-}
-
 // DWM only paints the system backdrop on windows it considers active, so nudge
 // it after the window is shown.
 static void TriggerWindowNCRendering(HWND hwnd)
@@ -2279,20 +2266,23 @@ static void TriggerWindowNCRendering(HWND hwnd)
 
 // Applies the configured backdrop effect.
 //
-// Everything goes through the DWM system backdrop (DWMWA_SYSTEMBACKDROP_TYPE):
-// on current Windows 11 builds that is the only path that renders a real
-// material. The legacy SetWindowCompositionAttribute acrylic / Aero blur are
-// broken there -- measured on Windows 11 build 26300, an acrylic accent renders
-// a flat fill or solid black (a 400x300 sample of the client area was either
-// uniform black or exactly the gradient color, never a blur), and
-// DwmEnableBlurBehindWindow does not change that. DWMSBT_TRANSIENTWINDOW (3) is
-// Windows 11's acrylic material and works, so Acrylic (and Blur, kept as an
-// alias) use it, Mica uses DWMSBT_MAINWINDOW (2) and Mica Alt uses
-// DWMSBT_TABBEDWINDOW (4). The accent policy is only a fallback for builds where
-// DWM rejects the system backdrop.
+// Measured on Windows 11 build 26300 against a real fullscreen overlay:
 //
-// The OS is only asked for the material, never for the tint: the Direct2D scrim
-// supplies the color and opacity for every mode through one linear control.
+//  * DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW (3) on its own paints a
+//    flat, dark fill that shows no trace of what is behind the window.
+//  * The legacy accent policy does render the blur. Its gradient colour is the
+//    tint, so a fully transparent one (0x00000000) gives a clean blur with no
+//    tint of its own. An opaque gradient colour is what makes it come out as an
+//    exact solid fill, which is why the accent was previously written off as
+//    broken.
+//  * The accent only takes effect when it is applied while the window is still
+//    hidden. Applying it after the window is on screen leaves the flat fill.
+//  * DWMSBT_MAINWINDOW (2) and DWMSBT_TABBEDWINDOW (4) do work, but they are
+//    opaque, wallpaper-derived materials, so Mica and Mica Alt use them.
+//  * DwmEnableBlurBehindWindow has no visible effect.
+//
+// The OS only supplies the material; the Direct2D scrim supplies the color and
+// opacity for every mode through one linear control.
 static void ApplyBackdrop(HWND hwnd)
 {
     MARGINS margins = {-1, -1, -1, -1};
@@ -2317,24 +2307,26 @@ static void ApplyBackdrop(HWND hwnd)
 
     bool accentOk = false;
     HRESULT backdropHr = E_FAIL;
-    bool blurOk = false;
     DWORD sysType = 1 /* DWMSBT_NONE */;
 
     switch (g_backgroundMode)
     {
     case BackgroundMode::Acrylic:
-    case BackgroundMode::Blur:
     {
+        // DWM's transient-window material plus the untinted accent blur, which
+        // is what actually blurs the desktop (see the note above).
         sysType = 3 /* DWMSBT_TRANSIENTWINDOW (Windows 11 acrylic) */;
         backdropHr = DwmSetWindowAttribute(hwnd, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &sysType,
                                            sizeof(sysType));
-        if (FAILED(backdropHr) || !g_glass)
-        {
-            // Older builds: the classic blur-behind plus acrylic accent.
-            blurOk = EnableBlurBehind(hwnd);
-            accentOk = SetAccentPolicy(hwnd, 4 /* ACCENT_ENABLE_ACRYLICBLURBEHIND */, 0,
-                                       0x00000000);
-        }
+        accentOk = SetAccentPolicy(hwnd, 4 /* ACCENT_ENABLE_ACRYLICBLURBEHIND */, 0,
+                                   0x00000000);
+        TriggerWindowNCRendering(hwnd);
+        break;
+    }
+    case BackgroundMode::Blur:
+    {
+        // Plain blur: the accent on its own, without DWM's tinted material.
+        accentOk = SetAccentPolicy(hwnd, 3 /* ACCENT_ENABLE_BLURBEHIND */, 0, 0x00000000);
         TriggerWindowNCRendering(hwnd);
         break;
     }
@@ -2355,11 +2347,10 @@ static void ApplyBackdrop(HWND hwnd)
     }
 
     Wh_Log(L"Backdrop applied: mode=%d sysType=%lu opacity=%.2f color=0x%08X glass=%d "
-           L"scrim=%.2f blur=%d accent=%d backdropHr=0x%08lX",
+           L"scrim=%.2f accent=%d backdropHr=0x%08lX",
            static_cast<int>(g_backgroundMode), static_cast<unsigned long>(sysType),
            g_backgroundOpacity, g_theme.background, g_glass ? 1 : 0, BackgroundScrimAlpha(),
-           blurOk ? 1 : 0, accentOk ? 1 : 0,
-           static_cast<unsigned long>(backdropHr));
+           accentOk ? 1 : 0, static_cast<unsigned long>(backdropHr));
 }
 
 // Opacity (0..1) of the color scrim drawn over the OS backdrop. The scrim is
@@ -3302,9 +3293,14 @@ static DWORD WINAPI UiThreadProc(LPVOID)
             if (message.hwnd == nullptr && message.message == WM_UI_SETTINGS)
             {
                 LoadSettings();
-                if (g_overlay)
+                // The accent blur only takes effect while the overlay is hidden
+                // (see ApplyBackdrop), so re-applying it to a visible overlay
+                // would leave the flat fill behind it. It is applied on the next
+                // ShowOverlay() instead.
+                if (g_overlay && !g_visible)
                     ApplyBackdrop(g_overlay);
-                InvalidateRect(g_overlay, nullptr, FALSE);
+                if (g_overlay)
+                    InvalidateRect(g_overlay, nullptr, FALSE);
                 continue;
             }
             TranslateMessage(&message);
