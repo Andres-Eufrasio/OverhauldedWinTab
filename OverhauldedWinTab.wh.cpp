@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.3.2
+// @version         0.4.0
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -36,6 +36,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
+- Optional carousel desktop strip that rotates as you switch desktops
 - Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
@@ -114,6 +115,7 @@ movement keys.
 | Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
+| Desktop strip | Flat row, or a rotating carousel that follows the active desktop |
 | Animation speed | Relative speed of the open and close animations |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
@@ -155,6 +157,18 @@ are:
 Theme and **Background** are independent: pick, for example, Catppuccin Mocha
 and keep Acrylic, or switch to a light theme with Mica. **Background opacity**
 still controls how strongly the panel tint covers the backdrop in every theme.
+
+## Desktop strip
+
+**Desktop strip** chooses how the virtual desktops are laid out at the bottom:
+
+- **Flat row** (default) – every desktop pill in a single row, with the create
+  button after them
+- **Carousel** – the active desktop sits in the centre, its neighbours curve and
+  tilt away, and the wheel turns as you switch. Selecting a desktop with `Tab`,
+  `h` / `l` or the arrows spins the strip to it; clicking a side pill jumps
+  straight there. The strip is a little taller in this mode so the tilted pills
+  have room.
 
 ## Search
 
@@ -275,6 +289,12 @@ OverhauldedWinTab is a pre-release project.
     - AlwaysShowSearch: true
       $name: Always show search
       $description: Keep the search bar visible. When off, press / to reveal it.
+    - DesktopStrip: "flat"
+      $name: Desktop strip
+      $description: Show the virtual desktops as a flat row or as a rotating carousel that follows the active desktop.
+      $options:
+      - "flat": Flat row
+      - "carousel": Carousel
     - AnimationSpeed: "100"
       $name: Animation speed
       $description: Relative speed of the open and close animations.
@@ -340,6 +360,7 @@ enum
     kTimerCaret = 3,
     kTimerDesktop = 4,
     kTimerHeldWatch = 5,
+    kTimerCarousel = 6,
 };
 
 // Manual GUIDs: the tool is compiled without __uuidof support.
@@ -451,6 +472,13 @@ enum class BackgroundMode
     None
 };
 
+// Desktop strip presentation.
+enum class StripStyle
+{
+    Flat,
+    Carousel
+};
+
 // Settings.
 static UINT32 g_accent = 0xFF4CC2FF;
 static BackgroundMode g_backgroundMode = BackgroundMode::Acrylic;
@@ -459,6 +487,7 @@ static float g_backgroundOpacity = 0.70f;
 static bool g_showIcons = true;
 static bool g_showHints = true;
 static bool g_searchAlwaysVisible = true;
+static StripStyle g_stripStyle = StripStyle::Flat;
 static int g_animSpeedPercent = 100;
 static bool g_closeOnFocusLoss = true;
 static bool g_wrapNavigation = true;
@@ -554,6 +583,8 @@ static IUnknown* g_viewCollection = nullptr;
 static bool g_vdInternalResolved = false;
 static int g_pendingDesktopTarget = -1;
 static int g_pendingDesktopTries = 0;
+static float g_carouselPos = 0.0f;
+static ULONGLONG g_lastCarouselTick = 0;
 
 // Direct2D / DirectWrite.
 static ID2D1Factory* g_d2dFactory = nullptr;
@@ -589,8 +620,13 @@ struct CardView
 struct PillView
 {
     int desktop = -1;
-    RectF rect, closeRect;
+    RectF rect, closeRect, hit, closeHit;
     bool hasClose = false;
+    bool visible = true;
+    float angle = 0.0f;  // Degrees, around the pill centre.
+    float scale = 1.0f;
+    float alpha = 1.0f;
+    float depth = 0.0f;  // Signed distance from the carousel centre.
 };
 
 static LayoutState g_layout;
@@ -621,6 +657,7 @@ static void SwitchDesktopBy(int delta);
 static void BeginRenameDesktop(int index);
 static void CommitRenameDesktop();
 static void CancelRenameDesktop();
+static void KickCarousel();
 static float BackgroundScrimAlpha();
 
 // Windhawk tool mod callbacks.
@@ -840,6 +877,8 @@ static void LoadSettings()
     g_showIcons = Wh_GetIntSetting(L"Appearance.ShowWindowIcons") != 0;
     g_showHints = Wh_GetIntSetting(L"Appearance.ShowHints") != 0;
     g_searchAlwaysVisible = Wh_GetIntSetting(L"Appearance.AlwaysShowSearch") != 0;
+    const std::wstring strip = read(L"Appearance.DesktopStrip");
+    g_stripStyle = strip == L"carousel" ? StripStyle::Carousel : StripStyle::Flat;
 
     const std::wstring speed = read(L"Appearance.AnimationSpeed");
     g_animSpeedPercent = speed == L"75" ? 75 : speed == L"125" ? 125
@@ -1003,6 +1042,16 @@ static void EnsureTextFormats()
         if (SUCCEEDED(g_dwrite->CreateEllipsisTrimmingSign(g_fmtCard, &g_ellipsis)) &&
             g_ellipsis)
             g_fmtCard->SetTrimming(&trimming, g_ellipsis);
+    }
+
+    // The carousel gives every pill the same width, so long desktop names need
+    // the same ellipsis treatment as window titles.
+    if (g_fmtPill && g_ellipsis)
+    {
+        g_fmtPill->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        DWRITE_TRIMMING trimming = {};
+        trimming.granularity = DWRITE_TRIMMING_GRANULARITY_CHARACTER;
+        g_fmtPill->SetTrimming(&trimming, g_ellipsis);
     }
 
     IDWriteTextFormat* formats[] = {g_fmtTitle, g_fmtCard, g_fmtSearch,
@@ -1509,6 +1558,7 @@ static void BeginRenameDesktop(int index)
     g_desktopSelected = index;
     g_searchFocused = false;
     g_searchSelectAll = false;
+    KickCarousel();
     if (g_overlay)
         SetTimer(g_overlay, kTimerCaret, 530, nullptr);
     InvalidateRect(g_overlay, nullptr, FALSE);
@@ -1874,6 +1924,40 @@ static bool MoveWindowToDesktopInternal(HWND window, const GUID& id)
     return SUCCEEDED(hr);
 }
 
+// Signed distance from the carousel position to `value`, wrapped into
+// (-count/2, count/2] so the shortest way around the wheel wins.
+static float WrapDelta(float value, int count)
+{
+    if (count <= 1)
+        return 0.0f;
+    const float n = static_cast<float>(count);
+    float d = std::fmod(value, n);
+    if (d < 0.0f)
+        d += n;
+    if (d > n / 2.0f)
+        d -= n;
+    return d;
+}
+
+// The pill the carousel should centre: the strip selection while it has focus,
+// otherwise the desktop being switched to, otherwise the active desktop.
+static int StripTarget()
+{
+    if (g_focusStrip)
+        return g_desktopSelected;
+    if (g_pendingDesktopTarget >= 0)
+        return g_pendingDesktopTarget;
+    return g_currentDesktop;
+}
+
+static void KickCarousel()
+{
+    if (!g_overlay || g_stripStyle != StripStyle::Carousel)
+        return;
+    g_lastCarouselTick = GetTickCount64();
+    SetTimer(g_overlay, kTimerCarousel, 16, nullptr);
+}
+
 static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
 {
     if (g_busy)
@@ -1913,11 +1997,26 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
 
     if (g_overlay)
         SetTimer(g_overlay, kTimerDesktop, direct ? 400 : 700, nullptr);
+    KickCarousel();
     InvalidateRect(g_overlay, nullptr, FALSE);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // LAYOUT
+
+static RectF TransformedBounds(const RectF& rect, float scale, float degrees)
+{
+    const float cx = (rect.l + rect.r) / 2.0f;
+    const float cy = (rect.t + rect.b) / 2.0f;
+    const float radians = degrees * 3.14159265f / 180.0f;
+    const float c = std::fabs(std::cos(radians));
+    const float sn = std::fabs(std::sin(radians));
+    const float halfW = rect.W() * scale / 2.0f;
+    const float halfH = rect.H() * scale / 2.0f;
+    const float extentX = c * halfW + sn * halfH;
+    const float extentY = sn * halfW + c * halfH;
+    return {cx - extentX, cy - extentY, cx + extentX, cy + extentY};
+}
 
 static void RebuildPills()
 {
@@ -1928,7 +2027,7 @@ static void RebuildPills()
     const float createW = 42.0f * s;
 
     float nameWidths[64] = {};
-    float totalPills = 0.0f;
+    float maxWidth = 0.0f;
     const int count = std::min<int>(static_cast<int>(g_desktops.size()),
                                     ARRAYSIZE(nameWidths));
     for (int i = 0; i < count; i++)
@@ -1946,8 +2045,74 @@ static void RebuildPills()
         const float maxW = renaming ? 460.0f * s : 320.0f * s;
         w = std::max(112.0f * s, std::min(maxW, w));
         nameWidths[i] = w;
-        totalPills += w;
+        maxWidth = std::max(maxWidth, w);
     }
+
+    if (count <= 0)
+    {
+        g_createRect = {};
+        return;
+    }
+
+    if (g_stripStyle == StripStyle::Carousel)
+    {
+        // A single width for every pill keeps the wheel symmetric; long names
+        // are ellipsized by the pill text format. The rename editor gets more
+        // room because it is always centred while editing.
+        const bool renaming = g_renameDesktop >= 0;
+        const float pillW = renaming
+            ? 360.0f * s
+            : std::max(140.0f * s, std::min(280.0f * s, maxWidth));
+        const float pitch = pillW + 14.0f * s;
+        const float cx = g_layout.strip.l + g_layout.strip.W() / 2.0f;
+        const float cy = g_layout.strip.t + g_layout.strip.H() / 2.0f;
+
+        for (int i = 0; i < count; i++)
+        {
+            const float d = WrapDelta(static_cast<float>(i) - g_carouselPos, count);
+            const float ad = std::fabs(d);
+
+            PillView pill;
+            pill.desktop = i;
+            pill.hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
+            pill.depth = d;
+            pill.visible = ad <= 2.25f;
+            if (pill.visible)
+            {
+                pill.scale = std::max(0.55f, 1.0f - 0.18f * ad);
+                pill.angle = std::max(-12.0f, std::min(12.0f, d * 4.5f));
+                pill.alpha =
+                    std::max(0.45f, 1.0f - 0.26f * std::max(0.0f, ad - 1.0f));
+
+                const float px = cx + d * pitch * 0.82f;
+                const float py = cy + std::min(12.0f * s, 2.5f * s * d * d);
+                pill.rect = {px - pillW / 2.0f, py - pillH / 2.0f,
+                             px + pillW / 2.0f, py + pillH / 2.0f};
+                pill.hit = TransformedBounds(pill.rect, pill.scale, pill.angle);
+
+                if (pill.hasClose)
+                {
+                    pill.closeRect = {pill.rect.r - 28.0f * s,
+                                      pill.rect.t + 6.0f * s,
+                                      pill.rect.r - 6.0f * s,
+                                      pill.rect.b - 6.0f * s};
+                    pill.closeHit = TransformedBounds(pill.closeRect, pill.scale,
+                                                      pill.angle);
+                }
+            }
+            g_pills.push_back(pill);
+        }
+
+        g_createRect = {g_layout.strip.r - createW - 12.0f * s,
+                        cy - pillH / 2.0f, g_layout.strip.r - 12.0f * s,
+                        cy + pillH / 2.0f};
+        return;
+    }
+
+    // Flat row (default).
+    float totalPills = 0.0f;
+    for (int i = 0; i < count; i++)
+        totalPills += nameWidths[i];
 
     const float stripW = g_layout.strip.W();
     const float total = totalPills + createW + gap * count;
@@ -1965,15 +2130,40 @@ static void RebuildPills()
         PillView pill;
         pill.desktop = i;
         pill.rect = {cursor, y, cursor + w, y + pillH};
+        pill.hit = pill.rect;
         pill.hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
         if (pill.hasClose)
+        {
             pill.closeRect = {pill.rect.r - 28.0f * s, pill.rect.t + 6.0f * s,
                               pill.rect.r - 6.0f * s, pill.rect.b - 6.0f * s};
+            pill.closeHit = pill.closeRect;
+        }
         g_pills.push_back(pill);
         cursor += w + gap;
     }
 
     g_createRect = {cursor, y, cursor + createW, y + pillH};
+}
+
+// The visible pill under the cursor. Overlapping carousel neighbours resolve to
+// the one closest to the centre of the wheel.
+static int PillAt(float x, float y)
+{
+    int best = -1;
+    float bestDepth = 1.0e9f;
+    for (int i = 0; i < static_cast<int>(g_pills.size()); i++)
+    {
+        const PillView& pill = g_pills[i];
+        if (!pill.visible || !Contains(pill.hit, x, y))
+            continue;
+        const float depth = std::fabs(pill.depth);
+        if (depth < bestDepth)
+        {
+            best = i;
+            bestDepth = depth;
+        }
+    }
+    return best;
 }
 
 static bool SearchVisible()
@@ -2006,7 +2196,7 @@ static void UpdateLayout()
         g_searchClearRect = {};
     }
 
-    const float stripH = 64.0f * s;
+    const float stripH = (g_stripStyle == StripStyle::Carousel ? 84.0f : 64.0f) * s;
     const float stripBottom = g_layout.h - 46.0f * s;
     g_layout.strip = {margin, stripBottom - stripH, g_layout.w - margin, stripBottom};
     g_layout.grid = {margin, g_layout.search.b + 42.0f * s, g_layout.w - margin,
@@ -2476,32 +2666,55 @@ static void RenderScene(HDC dc)
     FillRound(g_layout.strip, 14.0f * s, g_theme.stripFill, 0.90f);
     StrokeRound(g_layout.strip, 14.0f * s, g_theme.text, 1.0f * s, 0.07f);
 
-    for (int i = 0; i < static_cast<int>(g_pills.size()); i++)
+    // Farthest pills first so the centred one stays on top as the wheel turns.
+    int drawOrder[64] = {};
+    int drawCount = 0;
+    for (int i = 0; i < static_cast<int>(g_pills.size()) && drawCount < 64; i++)
+        if (g_pills[i].visible)
+            drawOrder[drawCount++] = i;
+    if (g_stripStyle == StripStyle::Carousel)
+        std::sort(drawOrder, drawOrder + drawCount, [](int a, int b) {
+            return std::fabs(g_pills[a].depth) > std::fabs(g_pills[b].depth);
+        });
+
+    for (int order = 0; order < drawCount; order++)
     {
+        const int i = drawOrder[order];
         const PillView& pill = g_pills[i];
         const bool active = pill.desktop == g_currentDesktop;
         const bool hovered = g_hoverPill == i;
         const bool selected = g_focusStrip && pill.desktop == g_desktopSelected;
 
+        if (g_stripStyle == StripStyle::Carousel)
+        {
+            const D2D1_POINT_2F centre =
+                D2D1::Point2F((pill.rect.l + pill.rect.r) / 2.0f,
+                              (pill.rect.t + pill.rect.b) / 2.0f);
+            g_d2dTarget->SetTransform(
+                D2D1::Matrix3x2F::Scale(pill.scale, pill.scale, centre) *
+                D2D1::Matrix3x2F::Rotation(pill.angle, centre));
+        }
+
         UINT32 fill = active ? g_theme.pillActive : g_theme.pillFill;
         if (hovered)
             fill = active ? g_theme.pillActiveHover : g_theme.pillHover;
-        FillRound(pill.rect, 10.0f * s, fill, 1.0f);
+        FillRound(pill.rect, 10.0f * s, fill, pill.alpha);
 
         if (selected)
-            StrokeRound(pill.rect, 10.0f * s, g_theme.accent, 2.0f * s, 0.95f);
+            StrokeRound(pill.rect, 10.0f * s, g_theme.accent, 2.0f * s,
+                        0.95f * pill.alpha);
         else
             StrokeRound(pill.rect, 10.0f * s,
                         active ? g_theme.accent : g_theme.text, 1.2f * s,
-                        active ? 0.75f : 0.08f);
+                        (active ? 0.75f : 0.08f) * pill.alpha);
 
         const RectF badge = {pill.rect.l + 10.0f * s, pill.rect.t + 9.0f * s,
                              pill.rect.l + 34.0f * s, pill.rect.b - 9.0f * s};
         FillRound(badge, 6.0f * s, active ? g_theme.accent : g_theme.text,
-                  active ? 0.9f : 0.12f);
+                  (active ? 0.9f : 0.12f) * pill.alpha);
         DrawTextBlock(std::to_wstring(pill.desktop + 1), g_fmtPill, badge,
                       active ? g_theme.onAccent : g_theme.text,
-                      DWRITE_TEXT_ALIGNMENT_CENTER, 0.95f);
+                      DWRITE_TEXT_ALIGNMENT_CENTER, 0.95f * pill.alpha);
 
         const bool renaming = g_renameDesktop == pill.desktop;
         const RectF nameRect = {pill.rect.l + 40.0f * s, pill.rect.t,
@@ -2512,13 +2725,13 @@ static void RenderScene(HDC dc)
             renaming ? g_renameText : g_desktops[pill.desktop].name;
         DrawTextBlock(shownName, g_fmtPill, nameRect, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_LEADING,
-                      (active || renaming) ? 0.95f : 0.72f);
+                      ((active || renaming) ? 0.95f : 0.72f) * pill.alpha);
 
         if (renaming && ((GetTickCount64() / 530) % 2) == 0)
         {
             const float textW = MeasureTextWidth(g_renameText, g_fmtPill);
             const float caretX = std::min(nameRect.r, nameRect.l + textW + 1.0f * s);
-            g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.85f));
+            g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.85f * pill.alpha));
             g_d2dTarget->DrawLine(D2D1::Point2F(caretX, pill.rect.t + 11.0f * s),
                                   D2D1::Point2F(caretX, pill.rect.b - 11.0f * s),
                                   g_d2dBrush, 1.4f * s);
@@ -2526,8 +2739,9 @@ static void RenderScene(HDC dc)
 
         if (pill.hasClose && !renaming)
         {
-            g_d2dBrush->SetColor(
-                ColorOf(g_theme.text, g_hoverPillClose == i ? 0.95f : 0.45f));
+            g_d2dBrush->SetColor(ColorOf(
+                g_theme.text,
+                (g_hoverPillClose == i ? 0.95f : 0.45f) * pill.alpha));
             const float ccx = pill.closeRect.l + pill.closeRect.W() / 2.0f;
             const float ccy = pill.closeRect.t + pill.closeRect.H() / 2.0f;
             const float arm = 4.4f * s;
@@ -2538,6 +2752,9 @@ static void RenderScene(HDC dc)
                                   D2D1::Point2F(ccx - arm, ccy + arm), g_d2dBrush,
                                   1.4f * s);
         }
+
+        if (g_stripStyle == StripStyle::Carousel)
+            g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
     }
 
     // Create-desktop button.
@@ -2620,6 +2837,7 @@ static void StopOverlayTimers()
     KillTimer(g_overlay, kTimerIdle);
     KillTimer(g_overlay, kTimerCaret);
     KillTimer(g_overlay, kTimerDesktop);
+    KillTimer(g_overlay, kTimerCarousel);
     g_pendingDesktopTarget = -1;
     g_pendingDesktopTries = 0;
 }
@@ -2861,6 +3079,9 @@ static void ShowOverlay()
     RefreshDesktops();
     RebuildWindowList();
     g_desktopSelected = g_currentDesktop;
+    g_carouselPos = static_cast<float>(g_currentDesktop);
+    if (g_overlay)
+        KillTimer(g_overlay, kTimerCarousel);
 
     g_presence = 0.0f;
     g_targetPresence = 1.0f;
@@ -3048,16 +3269,14 @@ static void UpdateHover(int x, int y)
         }
     }
 
-    for (int i = 0; i < static_cast<int>(g_pills.size()); i++)
+    const int pillIndex = PillAt(static_cast<float>(x), static_cast<float>(y));
+    if (pillIndex >= 0)
     {
-        if (Contains(g_pills[i].rect, static_cast<float>(x), static_cast<float>(y)))
-        {
-            g_hoverPill = i;
-            if (g_pills[i].hasClose &&
-                Contains(g_pills[i].closeRect, static_cast<float>(x), static_cast<float>(y)))
-                g_hoverPillClose = i;
-            break;
-        }
+        g_hoverPill = pillIndex;
+        const PillView& pill = g_pills[pillIndex];
+        if (pill.hasClose &&
+            Contains(pill.closeHit, static_cast<float>(x), static_cast<float>(y)))
+            g_hoverPillClose = pillIndex;
     }
 
     if (Contains(g_createRect, static_cast<float>(x), static_cast<float>(y)))
@@ -3071,11 +3290,9 @@ static void OnLeftClick(int x, int y)
 
     if (IsRenamingDesktop())
     {
-        for (const PillView& pill : g_pills)
-        {
-            if (pill.desktop == g_renameDesktop && Contains(pill.rect, fx, fy))
-                return;  // Clicking the field keeps editing.
-        }
+        const int pillIndex = PillAt(fx, fy);
+        if (pillIndex >= 0 && g_pills[pillIndex].desktop == g_renameDesktop)
+            return;  // Clicking the field keeps editing.
         CommitRenameDesktop();
         return;
     }
@@ -3116,23 +3333,25 @@ static void OnLeftClick(int x, int y)
         return;
     }
 
-    for (int i = 0; i < static_cast<int>(g_pills.size()); i++)
+    const int pillIndex = PillAt(fx, fy);
+    if (pillIndex >= 0)
     {
-        if (!Contains(g_pills[i].rect, fx, fy))
-            continue;
-
-        if (g_pills[i].hasClose && Contains(g_pills[i].closeRect, fx, fy))
+        const PillView& pill = g_pills[pillIndex];
+        if (pill.hasClose && Contains(pill.closeHit, fx, fy))
         {
             BeginDesktopAction(-1, false, true);
             return;
         }
 
         g_focusStrip = true;
-        g_desktopSelected = g_pills[i].desktop;
-        if (g_pills[i].desktop != g_currentDesktop)
-            BeginDesktopAction(g_pills[i].desktop, false, false);
+        g_desktopSelected = pill.desktop;
+        if (pill.desktop != g_currentDesktop)
+            BeginDesktopAction(pill.desktop, false, false);
         else
+        {
+            KickCarousel();
             InvalidateRect(g_overlay, nullptr, FALSE);
+        }
         return;
     }
 
@@ -3283,6 +3502,7 @@ static void OnKeyDown(WPARAM key)
         g_focusStrip = !g_focusStrip;
         if (g_focusStrip)
             g_desktopSelected = g_currentDesktop;
+        KickCarousel();
         InvalidateRect(g_overlay, nullptr, FALSE);
         return;
 
@@ -3305,6 +3525,7 @@ static void OnKeyDown(WPARAM key)
         if (g_focusStrip)
         {
             g_desktopSelected = std::max(0, g_desktopSelected - 1);
+            KickCarousel();
             InvalidateRect(g_overlay, nullptr, FALSE);
         }
         else
@@ -3328,6 +3549,7 @@ static void OnKeyDown(WPARAM key)
         {
             g_desktopSelected = std::min(static_cast<int>(g_desktops.size()) - 1,
                                          g_desktopSelected + 1);
+            KickCarousel();
             InvalidateRect(g_overlay, nullptr, FALSE);
         }
         else
@@ -3435,18 +3657,17 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
     {
         const int x = GET_X_LPARAM(lParam);
         const int y = GET_Y_LPARAM(lParam);
-        for (const PillView& pill : g_pills)
+        const int pillIndex = PillAt(static_cast<float>(x), static_cast<float>(y));
+        if (pillIndex >= 0)
         {
-            if (!Contains(pill.rect, static_cast<float>(x), static_cast<float>(y)))
-                continue;
+            const int desktop = g_pills[pillIndex].desktop;
             if (IsRenamingDesktop())
             {
-                if (pill.desktop == g_renameDesktop)
+                if (desktop == g_renameDesktop)
                     return 0;  // Already editing this desktop.
                 CommitRenameDesktop();
             }
-            BeginRenameDesktop(pill.desktop);
-            break;
+            BeginRenameDesktop(desktop);
         }
         return 0;
     }
@@ -3490,14 +3711,9 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             SearchVisible() && Contains(g_layout.search, fx, fy) && !g_search.empty();
         if (!overText && IsRenamingDesktop())
         {
-            for (const PillView& pill : g_pills)
-            {
-                if (pill.desktop == g_renameDesktop && Contains(pill.rect, fx, fy))
-                {
-                    overText = true;
-                    break;
-                }
-            }
+            const int pillIndex = PillAt(fx, fy);
+            if (pillIndex >= 0 && g_pills[pillIndex].desktop == g_renameDesktop)
+                overText = true;
         }
 
         const bool interactive = g_hoverCard >= 0 || g_hoverPill >= 0 || g_hoverCreate ||
@@ -3550,6 +3766,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 if (g_focusStrip)
                 {
                     g_desktopSelected = std::max(0, g_desktopSelected - 1);
+                    KickCarousel();
                     InvalidateRect(hwnd, nullptr, FALSE);
                 }
                 else
@@ -3561,6 +3778,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                     g_desktopSelected =
                         std::min(static_cast<int>(g_desktops.size()) - 1,
                                  g_desktopSelected + 1);
+                    KickCarousel();
                     InvalidateRect(hwnd, nullptr, FALSE);
                 }
                 else
@@ -3657,6 +3875,36 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 StopHeldWatch();
             return 0;
         }
+        if (wParam == kTimerCarousel)
+        {
+            if (g_stripStyle != StripStyle::Carousel || g_desktops.empty())
+            {
+                KillTimer(hwnd, kTimerCarousel);
+                return 0;
+            }
+
+            const ULONGLONG now = GetTickCount64();
+            float dt = g_lastCarouselTick
+                ? static_cast<float>(now - g_lastCarouselTick) / 1000.0f
+                : 0.016f;
+            g_lastCarouselTick = now;
+            dt = std::min(dt, 0.05f);
+
+            const int target = StripTarget();
+            const float delta = WrapDelta(
+                static_cast<float>(target) - g_carouselPos,
+                static_cast<int>(g_desktops.size()));
+            const float rate =
+                10.0f * 100.0f / static_cast<float>(std::max(50, g_animSpeedPercent));
+            g_carouselPos += delta * std::min(1.0f, dt * rate);
+            if (std::fabs(delta) < 0.002f)
+            {
+                g_carouselPos = static_cast<float>(target);
+                KillTimer(hwnd, kTimerCarousel);
+            }
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
         if (wParam == kTimerCaret)
         {
             if (g_searchFocused || IsRenamingDesktop())
@@ -3690,6 +3938,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             }
             RebuildWindowList();
             g_desktopSelected = g_currentDesktop;
+            KickCarousel();
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
@@ -3891,8 +4140,12 @@ static DWORD WINAPI UiThreadProc(LPVOID)
                 // ShowOverlay() instead.
                 if (g_overlay && !g_visible)
                     ApplyBackdrop(g_overlay);
+                g_carouselPos = static_cast<float>(StripTarget());
                 if (g_overlay)
+                {
+                    KillTimer(g_overlay, kTimerCarousel);
                     InvalidateRect(g_overlay, nullptr, FALSE);
+                }
                 continue;
             }
             TranslateMessage(&message);

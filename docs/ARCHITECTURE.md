@@ -211,6 +211,9 @@ State is intentionally small:
   pill width and the caret position are measured with DirectWrite
   (`MeasureTextWidth`) instead of an estimated per-character advance, so long
   names are not clipped and the caret sits where the text ends.
+- `g_carouselPos` is the animated centre of the carousel strip; `StripTarget()`
+  is where it is heading and `WrapDelta` measures the shortest way around the
+  wheel.
 
 The search field is never typed into until it has focus: click it, or press `/`.
 Until then `WM_CHAR` only routes the navigation keys (`h` `j` `k` `l` `x`), so a
@@ -222,6 +225,17 @@ which makes the next typed character replace the query. With
 `Appearance.AlwaysShowSearch` off, `SearchVisible()` collapses the field in
 `UpdateLayout` until it is focused or non-empty; `Appearance.ShowHints` hides only
 the hint line.
+
+`Appearance.DesktopStrip` selects the strip layout. In carousel mode
+`RebuildPills` gives every pill one width and places it by its wrapped distance
+`d` from `g_carouselPos`, with `scale = 1 - 0.18|d|`, a `4.5d` degree tilt, a
+small vertical arc and an alpha fade. The strip is taller (84 px at 100%) so
+rotated pills stay inside it. `kTimerCarousel` eases `g_carouselPos` towards
+`StripTarget()` (strip selection, pending desktop switch, or active desktop) by
+the shortest route around the wheel, and `KickCarousel()` restarts the timer when
+the target changes. Rendering sorts visible pills farthest-first and applies a
+scale/rotation transform about each pill centre; hit testing uses the transformed
+bounding box and prefers the pill closest to the centre.
 
 `ShowOverlay` clears the transient state (query, page, selection, focus, rename,
 hover) *before* it calls `RebuildWindowList`. That order matters: the rebuild

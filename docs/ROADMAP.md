@@ -15,6 +15,11 @@ Guiding rules:
   magic numbers through `RenderScene`.
 - Each feature gets its own commit and a README + readme-block sync.
 
+## Implemented on `experimental`
+
+- `Appearance.DesktopStrip` (`flat` / `carousel`) - the carousel centres the
+  active desktop and rotates as you switch (v0.4.0).
+
 ## Phase 1 - Visual customization pack
 
 Low risk, high payoff, and mostly confined to `UpdateLayout`, `ResolveTheme` and
@@ -94,6 +99,6 @@ blocking the UI thread.
 
 ## Suggested order
 
-1. Phase 1 visual pack as one release (v0.4.0), split into 2-3 commits.
-2. Drag-to-move as the headline of Phase 2 (v0.4.x), then the menu.
+1. Phase 1 visual pack as one release (v0.5.0), split into 2-3 commits.
+2. Drag-to-move as the headline of Phase 2 (v0.5.x), then the menu.
 3. Re-evaluate cross-desktop search after the shell enumeration probe.
