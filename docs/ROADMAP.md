@@ -24,9 +24,20 @@ Guiding rules:
 
 ## Implemented on `experimental-card`
 
-- Playing-card carousel - every desktop is a numbered card with a cycling suit
-  (spades, hearts, diamonds, clubs), a corner rank and a large pip; the flat row
-  is unchanged (v0.5.0).
+- `Appearance.DesktopStrip` gains a third `cards` option, so the original
+  carousel remains available next to the playing-card wheel (v0.6.0).
+- `Appearance.StripTabs` (`pill` / `chip`) renders flat-row and carousel tabs as
+  poker chips with a numbered centre disc and a name label (v0.6.0).
+- `Appearance.StripTabs` gains `cards`, so playing cards are a tab style and work
+  in both the flat row and the carousel; the old `DesktopStrip=cards` value is
+  still accepted as a legacy alias (v0.7.0).
+- `Appearance.CardSize` (`small` / `medium` / `large`) scales the playing cards
+  and the strip height (v0.7.0).
+- The playing-card create button is a face-down card; click it or pull it down
+  to create a desktop (v0.7.0).
+- `Behavior.WrapDesktopStrip` wraps `Left`/`Right` and `h`/`l` from the last
+  desktop to the first (v0.7.0).
+- `Appearance.Title` replaces the hardcoded `Task View` heading (v0.7.0).
 
 ## Phase 1 - Visual customization pack
 
@@ -58,7 +69,6 @@ not clip titles (ellipsis already handles long names).
 | `Behavior.OpenOnMonitor` | Active window / Cursor | Cursor is the common multi-monitor preference |
 | `Behavior.SortOrder` | Recent / Title / App | Recent is the current `EnumWindows` order; Title/App use a stable sort on the existing lowercased fields |
 | `Behavior.WheelAction` | Pages / Desktops | When the cursor is over the strip, the wheel should always switch desktops |
-| `Behavior.WrapDesktopStrip` | on/off | `h`/`l` and arrows currently clamp at the ends |
 
 **Drag a card onto a desktop pill** to move the window there. This is the most
 natural complement to the number-key moves:

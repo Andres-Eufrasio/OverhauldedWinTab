@@ -226,23 +226,44 @@ which makes the next typed character replace the query. With
 `UpdateLayout` until it is focused or non-empty; `Appearance.ShowHints` hides only
 the hint line.
 
-`Appearance.DesktopStrip` selects the strip layout. In carousel mode every
-desktop becomes a portrait playing card: `RebuildPills` uses a fixed 160 x 224
-card and places it by its wrapped distance `d` from `g_carouselPos`, with
-`scale = 1 - 0.18|d|`, a `4.5d` degree tilt, a small vertical arc and an alpha
-fade. The strip is taller (264 px at 100%) so the rotated cards stay inside it.
-`DrawDesktopCard` paints the ivory face, corner rank and suit (rotated 180
-degrees in the bottom corner), a large suit pip, and the desktop name; the suit
-is `desktop & 3`, so desktops cycle through spades, hearts, diamonds and clubs.
-`Appearance.StripBackground` controls the panel: `Auto` keeps it in the flat row
-and hides it for the carousel, `StripBackgroundVisible()` resolves the three
-modes, and floating cards get a soft drop shadow. `kTimerCarousel` eases
-`g_carouselPos` towards `StripTarget()` (strip selection, pending desktop
-switch, or active desktop) by the shortest route around the wheel, and
-`KickCarousel()` restarts the timer when the target changes. Rendering sorts
-visible cards farthest-first and applies a scale/rotation transform about each
-card centre; hit testing uses the transformed bounding box and prefers the card
-closest to the centre.
+`Appearance.DesktopStrip` selects the strip layout: `flat` or `carousel`.
+The legacy `cards` value is still accepted and maps to the carousel with the
+playing-card tab style. `Appearance.StripTabs` selects the tab shape: `pill`,
+`chip` or `cards`. `UsesChips()` and `UsesCards()` resolve the tab style, and
+`IsWheel()` marks the carousel layout. In carousel mode every tab is placed by
+its wrapped distance `d` from `g_carouselPos`, with `scale = 1 - 0.18|d|`, a
+`4.5d` degree tilt, a small vertical arc and an alpha fade. `DrawChipTab` paints
+a poker chip: a coloured rim with eight white edge spots, the desktop number on a
+cream centre disc, the desktop name on a label below, and the close button on the
+rim. Pill tabs keep their 42 px flat-row and 52 px carousel heights. Chips are
+52 px in the flat row and 64 px in the carousel, with the name on a label
+underneath (15 px and 17 px respectively).
+
+Playing cards are a tab style, so they work in both layouts. `RebuildPills`
+uses a fixed 160 x 224 card multiplied by `Appearance.CardSize`
+(small 0.82, medium 1.0, large 1.22) and the strip is `224 * scale + 40` px tall
+(264 px at medium) so the rotated cards stay inside it. The carousel positions
+cards on the wheel; the flat row shrinks them if the row cannot fit. The create
+button becomes a face-down card: `DrawCreateCard` paints the card back, lattice
+and plus, and `WM_LBUTTONDOWN`/`WM_MOUSEMOVE`/`WM_LBUTTONUP` turn a downward pull
+into the same create action as a click. `DrawDesktopCard` paints the ivory face,
+corner rank and suit (rotated 180 degrees in the bottom corner), a large suit
+pip, and the desktop name; the suit is `desktop & 3`, so desktops cycle through
+spades, hearts, diamonds and clubs. `Appearance.StripBackground` controls the
+panel: `Auto` keeps it in the flat row and hides it for the carousel,
+`StripBackgroundVisible()` resolves the three modes, and floating tabs get a
+soft drop shadow. `kTimerCarousel` eases `g_carouselPos` towards `StripTarget()`
+(strip selection, pending desktop switch, or active desktop) by the shortest
+route around the wheel, and `KickCarousel()` restarts the timer when the target
+changes. Rendering sorts visible tabs farthest-first and applies a
+scale/rotation transform about each tab centre; hit testing uses the transformed
+bounding box and prefers the tab closest to the centre.
+
+`Behavior.WrapDesktopStrip` controls `MoveStripSelection()`, the shared handler
+for `Left`/`Right` and `h`/`l` while the strip has focus. With it on, the
+selection wraps modulo the desktop count (7 to 1 and back); with it off it clamps
+at the ends. The title in the top-left is `Appearance.Title`, defaulting to
+`Task View`, and is laid out up to the search field so longer labels fit.
 
 `ShowOverlay` clears the transient state (query, page, selection, focus, rename,
 hover) *before* it calls `RebuildWindowList`. That order matters: the rebuild

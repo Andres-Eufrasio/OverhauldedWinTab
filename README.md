@@ -21,7 +21,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
-- Optional playing-card carousel desktop strip that rotates as you switch desktops
+- Optional playing-card, poker-chip and carousel desktop tabs
 - Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
@@ -77,6 +77,7 @@ opens immediately instead of building the interface from scratch every time.
 | Right click a desktop | Rename that virtual desktop |
 | Middle click on a card | Close that window |
 | Click `+` on the strip | Create a new virtual desktop |
+| Pull the create card down | Create a new virtual desktop (playing-card tabs) |
 | Click `x` on the active desktop | Close the current virtual desktop |
 | Mouse wheel | Move through grid pages |
 
@@ -94,17 +95,21 @@ movement keys.
 | ------- | ----------- |
 | Theme | Color palette for the whole overlay (Custom, Catppuccin, Nord, ...) |
 | Accent color | Accent color used for highlights, in `#RRGGBB` format (Custom theme) |
+| Title text | Text shown in the top-left corner (defaults to `Task View`) |
 | Background | Backdrop effect: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent |
 | Background color | Tint color of the overview panel, in `#RRGGBB` format (Custom theme) |
 | Background opacity | How strong the panel tint is over the backdrop (`0`-`100`) |
 | Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
-| Desktop strip | Flat row, or a rotating playing-card carousel that follows the active desktop |
-| Desktop strip background | Panel behind the pills: Auto (flat only), Always show, or Always hide |
+| Desktop strip | Flat row or rotating carousel |
+| Desktop tabs | Pills, poker chips, or playing cards |
+| Card size | Small, medium or large playing cards |
+| Desktop strip background | Panel behind the tabs: Auto (flat only), Always show, or Always hide |
 | Animation speed | Relative speed of the open and close animations |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
+| Wrap desktop strip | `Left`/`Right` and `h`/`l` wrap from the last desktop to the first |
 | Vim navigation | Enable `h` `j` `k` `l`, `/` and `x` navigation keys |
 
 **Background** controls what sits behind the panel:
@@ -148,20 +153,36 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 
 **Desktop strip** chooses how the virtual desktops are laid out at the bottom:
 
-- **Flat row** (default) – every desktop pill in a single row, with the create
-  button after them and the strip panel behind them
-- **Carousel** – the active desktop sits in the centre as a playing card, its
-  neighbours curve and tilt away, and the wheel turns as you switch. Each desktop
-  is numbered like a card (1, 2, 3…) and gets its own suit: spades, hearts,
-  diamonds, clubs, then back to spades. The cards float directly over the
-  desktop: the panel is hidden by default, so the wheel has no box around it.
-  Selecting a desktop with `Tab`, `h` / `l` or the arrows spins the strip to it;
-  clicking a side card jumps straight there.
+- **Flat row** (default) – every desktop in a single row, with the create button
+  after them and the strip panel behind them.
+- **Carousel** – the active desktop sits in the centre, its neighbours curve and
+  tilt away, and the wheel turns as you switch. Selecting a desktop with `Tab`,
+  `h` / `l` or the arrows spins the strip to it; clicking a side tab jumps
+  straight there.
+
+**Desktop tabs** chooses the tab shape for both layouts:
+
+- **Pills** (default) – the wide rounded tabs with the desktop number and name.
+- **Poker chips** – each desktop becomes a numbered casino chip with a coloured
+  rim, white edge spots and the desktop name on a label underneath. The create
+  button becomes a round chip too.
+- **Playing cards** – each desktop becomes a portrait card with its own suit
+  (spades, hearts, diamonds, clubs, then back to spades). **Card size** makes the
+  cards small, medium or large. In the carousel the cards float directly over the
+  desktop with the panel hidden by default; the flat row keeps the panel. The
+  create button is a face-down card: click it, or pull it downward, to create a
+  new desktop.
+
+The old **Playing cards** value under **Desktop strip** is still accepted so
+existing settings keep working. New setups should use **Desktop tabs**.
 
 **Desktop strip background** controls the panel behind the strip: **Auto**
-(default) keeps it for the flat row and hides it for the carousel, **Always
-show** brings it back in carousel mode, and **Always hide** makes the flat row
-float as well.
+(default) keeps it for the flat row and hides it for the carousel, **Always show**
+brings it back, and **Always hide** makes the flat row float as well.
+
+**Wrap desktop strip** (default on) lets `Left`/`Right` and `h`/`l` loop from the
+last desktop back to the first, so a seven-desktop carousel goes from 7 to 1
+instead of stopping at the edge.
 
 ## Search
 

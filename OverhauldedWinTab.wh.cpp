@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.5.0
+// @version         0.7.0
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -36,7 +36,7 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
-- Optional playing-card carousel desktop strip that rotates as you switch desktops
+- Optional playing-card, poker-chip and carousel desktop tabs
 - Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
@@ -92,6 +92,7 @@ opens immediately instead of building the interface from scratch every time.
 | Right click a desktop | Rename that virtual desktop |
 | Middle click on a card | Close that window |
 | Click `+` on the strip | Create a new virtual desktop |
+| Pull the create card down | Create a new virtual desktop (playing-card tabs) |
 | Click `x` on the active desktop | Close the current virtual desktop |
 | Mouse wheel | Move through grid pages |
 
@@ -109,17 +110,21 @@ movement keys.
 | ------- | ----------- |
 | Theme | Color palette for the whole overlay (Custom, Catppuccin, Nord, ...) |
 | Accent color | Accent color used for highlights, in `#RRGGBB` format (Custom theme) |
+| Title text | Text shown in the top-left corner (defaults to `Task View`) |
 | Background | Backdrop effect: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent |
 | Background color | Tint color of the overview panel, in `#RRGGBB` format (Custom theme) |
 | Background opacity | How strong the panel tint is over the backdrop (`0`-`100`) |
 | Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
-| Desktop strip | Flat row, or a rotating playing-card carousel that follows the active desktop |
-| Desktop strip background | Panel behind the pills: Auto (flat only), Always show, or Always hide |
+| Desktop strip | Flat row or rotating carousel |
+| Desktop tabs | Pills, poker chips, or playing cards |
+| Card size | Small, medium or large playing cards |
+| Desktop strip background | Panel behind the tabs: Auto (flat only), Always show, or Always hide |
 | Animation speed | Relative speed of the open and close animations |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
+| Wrap desktop strip | `Left`/`Right` and `h`/`l` wrap from the last desktop to the first |
 | Vim navigation | Enable `h` `j` `k` `l`, `/` and `x` navigation keys |
 
 **Background** controls what sits behind the panel:
@@ -163,20 +168,36 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 
 **Desktop strip** chooses how the virtual desktops are laid out at the bottom:
 
-- **Flat row** (default) – every desktop pill in a single row, with the create
-  button after them and the strip panel behind them
-- **Carousel** – the active desktop sits in the centre as a playing card, its
-  neighbours curve and tilt away, and the wheel turns as you switch. Each desktop
-  is numbered like a card (1, 2, 3…) and gets its own suit: spades, hearts,
-  diamonds, clubs, then back to spades. The cards float directly over the
-  desktop: the panel is hidden by default, so the wheel has no box around it.
-  Selecting a desktop with `Tab`, `h` / `l` or the arrows spins the strip to it;
-  clicking a side card jumps straight there.
+- **Flat row** (default) – every desktop in a single row, with the create button
+  after them and the strip panel behind them.
+- **Carousel** – the active desktop sits in the centre, its neighbours curve and
+  tilt away, and the wheel turns as you switch. Selecting a desktop with `Tab`,
+  `h` / `l` or the arrows spins the strip to it; clicking a side tab jumps
+  straight there.
+
+**Desktop tabs** chooses the tab shape for both layouts:
+
+- **Pills** (default) – the wide rounded tabs with the desktop number and name.
+- **Poker chips** – each desktop becomes a numbered casino chip with a coloured
+  rim, white edge spots and the desktop name on a label underneath. The create
+  button becomes a round chip too.
+- **Playing cards** – each desktop becomes a portrait card with its own suit
+  (spades, hearts, diamonds, clubs, then back to spades). **Card size** makes the
+  cards small, medium or large. In the carousel the cards float directly over the
+  desktop with the panel hidden by default; the flat row keeps the panel. The
+  create button is a face-down card: click it, or pull it downward, to create a
+  new desktop.
+
+The old **Playing cards** value under **Desktop strip** is still accepted so
+existing settings keep working. New setups should use **Desktop tabs**.
 
 **Desktop strip background** controls the panel behind the strip: **Auto**
-(default) keeps it for the flat row and hides it for the carousel, **Always
-show** brings it back in carousel mode, and **Always hide** makes the flat row
-float as well.
+(default) keeps it for the flat row and hides it for the carousel, **Always show**
+brings it back, and **Always hide** makes the flat row float as well.
+
+**Wrap desktop strip** (default on) lets `Left`/`Right` and `h`/`l` loop from the
+last desktop back to the first, so a seven-desktop carousel goes from 7 to 1
+instead of stopping at the edge.
 
 ## Search
 
@@ -271,7 +292,10 @@ OverhauldedWinTab is a pre-release project.
       - "rose-pine": Rose Pine
     - AccentColor: "#4CC2FF"
       $name: Accent color
-      $description: Accent color used for highlights, in #RRGGBB format. Used by the "Custom" theme.
+      $description: 'Accent color used for highlights, in #RRGGBB format. Used by the "Custom" theme.'
+    - Title: "Task View"
+      $name: Title text
+      $description: Text shown in the top-left corner of the overview. Leave empty to use "Task View".
     - Background: "acrylic"
       $name: Background
       $description: Backdrop effect. Acrylic (and Blur) use the Windows 11 acrylic material; Mica is a flat, wallpaper-tinted surface.
@@ -284,7 +308,7 @@ OverhauldedWinTab is a pre-release project.
       - "none": Transparent
     - BackgroundColor: "#0A0D12"
       $name: Background color
-      $description: Tint color of the overview panel, in #RRGGBB format. Used by the "Custom" theme.
+      $description: 'Tint color of the overview panel, in #RRGGBB format. Used by the "Custom" theme.'
     - BackgroundOpacity: 70
       $name: Background opacity
       $description: Strength of the panel tint drawn over the backdrop (0-100). 0 leaves the backdrop untouched, 100 is fully opaque.
@@ -299,13 +323,28 @@ OverhauldedWinTab is a pre-release project.
       $description: Keep the search bar visible. When off, press / to reveal it.
     - DesktopStrip: "flat"
       $name: Desktop strip
-      $description: Show the virtual desktops as a flat row or as a rotating carousel that follows the active desktop.
+      $description: Lay the virtual desktops out as a flat row or a rotating carousel. The legacy "Playing cards" value is still accepted; use Desktop tabs to choose the tab shape.
       $options:
       - "flat": Flat row
       - "carousel": Carousel
+      - "cards": Playing cards (legacy)
+    - StripTabs: "pill"
+      $name: Desktop tabs
+      $description: Shape of the desktop tabs. Poker chips show the desktop number on a round chip with the name below; playing cards turn each desktop into a portrait card.
+      $options:
+      - "pill": Pills
+      - "chip": Poker chips
+      - "cards": Playing cards
+    - CardSize: "medium"
+      $name: Card size
+      $description: Size of the playing cards when Desktop tabs is set to Playing cards.
+      $options:
+      - "small": Small
+      - "medium": Medium
+      - "large": Large
     - StripBackground: "auto"
       $name: Desktop strip background
-      $description: Panel behind the virtual desktop pills. Auto shows it for the flat row and hides it for the floating carousel.
+      $description: Panel behind the virtual desktop tabs. Auto shows it for the flat row and hides it for the floating carousel and card wheel.
       $options:
       - "auto": Auto
       - "show": Always show
@@ -326,6 +365,9 @@ OverhauldedWinTab is a pre-release project.
     - WrapNavigation: true
       $name: Wrap grid navigation
       $description: Arrow keys wrap around the edges of the grid.
+    - WrapDesktopStrip: true
+      $name: Wrap desktop strip
+      $description: Let Left/Right and h/l wrap from the last desktop back to the first in the strip.
     - VimNavigation: true
       $name: Vim navigation
       $description: Use h/j/k/l to move, / to focus the search and x to close the selected window.
@@ -494,7 +536,15 @@ enum class StripStyle
     Carousel
 };
 
-// Panel behind the desktop pills.
+// Shape of a desktop tab.
+enum class TabStyle
+{
+    Pill,
+    Chip,
+    Cards
+};
+
+// Panel behind the desktop tabs.
 enum class StripBackground
 {
     Auto,
@@ -511,11 +561,15 @@ static bool g_showIcons = true;
 static bool g_showHints = true;
 static bool g_searchAlwaysVisible = true;
 static StripStyle g_stripStyle = StripStyle::Flat;
+static TabStyle g_tabStyle = TabStyle::Pill;
 static StripBackground g_stripBackground = StripBackground::Auto;
+static float g_cardScale = 1.0f;
 static int g_animSpeedPercent = 100;
 static bool g_closeOnFocusLoss = true;
 static bool g_wrapNavigation = true;
+static bool g_wrapDesktopStrip = true;
 static bool g_vimNavigation = true;
+static std::wstring g_titleText = L"Task View";
 
 // Overlay window and presentation.
 static HWND g_overlay = nullptr;
@@ -554,6 +608,9 @@ static int g_hoverPillClose = -1;
 static bool g_hoverCreate = false;
 static bool g_hoverSearch = false;
 static bool g_hoverSearchClear = false;
+static bool g_createDragging = false;
+static POINT g_createDragStart = {};
+static float g_createPull = 0.0f;
 
 // Inline virtual desktop rename.
 static int g_renameDesktop = -1;
@@ -905,7 +962,30 @@ static void LoadSettings()
     g_showHints = Wh_GetIntSetting(L"Appearance.ShowHints") != 0;
     g_searchAlwaysVisible = Wh_GetIntSetting(L"Appearance.AlwaysShowSearch") != 0;
     const std::wstring strip = read(L"Appearance.DesktopStrip");
-    g_stripStyle = strip == L"carousel" ? StripStyle::Carousel : StripStyle::Flat;
+    const std::wstring tabs = read(L"Appearance.StripTabs");
+    g_stripStyle = strip == L"carousel" ? StripStyle::Carousel
+                                        : StripStyle::Flat;
+    g_tabStyle = tabs == L"chip" ? TabStyle::Chip
+               : tabs == L"cards" ? TabStyle::Cards
+                                  : TabStyle::Pill;
+
+    // v0.6 stored the playing-card wheel in DesktopStrip. Keep that layout for
+    // existing installs, but let an explicit chip/card tab choice win.
+    if (strip == L"cards")
+    {
+        g_stripStyle = StripStyle::Carousel;
+        if (tabs != L"chip" && tabs != L"cards")
+            g_tabStyle = TabStyle::Cards;
+    }
+
+    const std::wstring cardSize = read(L"Appearance.CardSize");
+    g_cardScale = cardSize == L"small" ? 0.82f
+                : cardSize == L"large" ? 1.22f
+                                       : 1.0f;
+
+    const std::wstring title = read(L"Appearance.Title");
+    g_titleText = title.empty() ? L"Task View" : title;
+
     const std::wstring stripBackground = read(L"Appearance.StripBackground");
     g_stripBackground = stripBackground == L"show" ? StripBackground::Show
                       : stripBackground == L"hide" ? StripBackground::Hide
@@ -917,6 +997,7 @@ static void LoadSettings()
 
     g_closeOnFocusLoss = Wh_GetIntSetting(L"Behavior.CloseOnFocusLoss") != 0;
     g_wrapNavigation = Wh_GetIntSetting(L"Behavior.WrapNavigation") != 0;
+    g_wrapDesktopStrip = Wh_GetIntSetting(L"Behavior.WrapDesktopStrip") != 0;
     g_vimNavigation = Wh_GetIntSetting(L"Behavior.VimNavigation") != 0;
 
     const std::wstring theme = read(L"Appearance.Theme");
@@ -2006,18 +2087,33 @@ static int StripTarget()
     return g_currentDesktop;
 }
 
+static bool IsWheel()
+{
+    return g_stripStyle == StripStyle::Carousel;
+}
+
+static bool UsesChips()
+{
+    return g_tabStyle == TabStyle::Chip;
+}
+
+static bool UsesCards()
+{
+    return g_tabStyle == TabStyle::Cards;
+}
+
 static bool StripBackgroundVisible()
 {
     if (g_stripBackground == StripBackground::Show)
         return true;
     if (g_stripBackground == StripBackground::Hide)
         return false;
-    return g_stripStyle != StripStyle::Carousel;
+    return g_stripStyle == StripStyle::Flat;
 }
 
 static void KickCarousel()
 {
-    if (!g_overlay || g_stripStyle != StripStyle::Carousel)
+    if (!g_overlay || !IsWheel())
         return;
     g_lastCarouselTick = GetTickCount64();
     SetTimer(g_overlay, kTimerCarousel, 16, nullptr);
@@ -2093,28 +2189,56 @@ static void RebuildPills()
 {
     g_pills.clear();
     const float s = g_scale;
-    const float pillH = (g_stripStyle == StripStyle::Carousel ? 224.0f : 42.0f) * s;
+    const bool cards = UsesCards();
+    const bool wheel = IsWheel();
+    const bool chips = UsesChips();
+    const float cardScale = g_cardScale;
+    const float cardW = 160.0f * cardScale * s;
+    const float cardH = 224.0f * cardScale * s;
+    const float chipD = (wheel ? 64.0f : 52.0f) * s;
+    const float pillH = cards ? cardH
+                       : wheel ? (chips ? 85.0f : 52.0f) * s
+                               : (chips ? 71.0f : 42.0f) * s;
     const float gap = 10.0f * s;
-    const float createW = 42.0f * s;
+    const float createW = cards ? 112.0f * cardScale * s : 42.0f * s;
+    const float createH = cards ? createW * 1.4f : 42.0f * s;
 
     float nameWidths[64] = {};
+    float maxWidth = 0.0f;
     const int count = std::min<int>(static_cast<int>(g_desktops.size()),
                                     ARRAYSIZE(nameWidths));
-    for (int i = 0; i < count; i++)
-    {
-        const bool renaming = g_renameDesktop == i;
-        const std::wstring& shown = renaming ? g_renameText : g_desktops[i].name;
-        const bool hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
 
-        // Badge + gaps + a name measured with the real font, plus caret room
-        // while renaming.
-        const float textW = MeasureTextWidth(shown, PillFormat());
-        float w = 40.0f * s + textW + (hasClose ? 30.0f * s : 14.0f * s);
-        if (renaming)
-            w += 18.0f * s;
-        const float maxW = renaming ? 460.0f * s : 320.0f * s;
-        w = std::max(112.0f * s, std::min(maxW, w));
-        nameWidths[i] = w;
+    // Cards use a fixed shape, so only pills and chips measure their labels.
+    if (!cards)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            const bool renaming = g_renameDesktop == i;
+            const std::wstring& shown = renaming ? g_renameText : g_desktops[i].name;
+            const bool hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
+
+            if (chips)
+            {
+                const float textW = MeasureTextWidth(shown, g_fmtHint);
+                float w = std::max(chipD + 16.0f * s, textW + 14.0f * s);
+                if (renaming)
+                    w = std::max(w, 220.0f * s);
+                nameWidths[i] = std::min(260.0f * s, w);
+            }
+            else
+            {
+                // Badge + gaps + a name measured with the real font, plus caret
+                // room while renaming.
+                const float textW = MeasureTextWidth(shown, PillFormat());
+                float w = 40.0f * s + textW + (hasClose ? 30.0f * s : 14.0f * s);
+                if (renaming)
+                    w += 18.0f * s;
+                const float maxW = renaming ? 460.0f * s : 320.0f * s;
+                w = std::max(112.0f * s, std::min(maxW, w));
+                nameWidths[i] = w;
+            }
+            maxWidth = std::max(maxWidth, nameWidths[i]);
+        }
     }
 
     if (count <= 0)
@@ -2123,21 +2247,131 @@ static void RebuildPills()
         return;
     }
 
-    if (g_stripStyle == StripStyle::Carousel)
-    {
-        // Every desktop is a portrait playing card, so the wheel needs one
-        // fixed card size instead of widths driven by the desktop name.
-        const float pillW = 160.0f * s;
-        const float pitch = pillW + 20.0f * s;
-        const float cx = g_layout.strip.l + g_layout.strip.W() / 2.0f;
-        const float cy = g_layout.strip.t + g_layout.strip.H() / 2.0f;
+    auto setChipClose = [&](PillView& pill, float diameter) {
+        const float ccx = (pill.rect.l + pill.rect.r) / 2.0f;
+        const float ccy = pill.rect.t + 2.0f * s + diameter / 2.0f;
+        const float r = diameter / 2.0f;
+        pill.closeRect = {ccx + 0.35f * r, ccy - 0.95f * r,
+                          ccx + 0.95f * r, ccy - 0.35f * r};
+        pill.closeHit =
+            TransformedBounds(pill.closeRect, pill.scale, pill.angle);
+    };
 
-        // Keep the farthest visible card clear of the create button; narrow
+    auto setCardClose = [&](PillView& pill, float cardScaleFactor) {
+        pill.closeRect = {pill.rect.r - 32.0f * cardScaleFactor * s,
+                          pill.rect.t + 8.0f * cardScaleFactor * s,
+                          pill.rect.r - 8.0f * cardScaleFactor * s,
+                          pill.rect.t + 32.0f * cardScaleFactor * s};
+        pill.closeHit =
+            TransformedBounds(pill.closeRect, pill.scale, pill.angle);
+    };
+
+    const float cy = g_layout.strip.t + g_layout.strip.H() / 2.0f;
+
+    if (cards && wheel)
+    {
+        // Card wheel: every desktop is a portrait playing card.
+        const float pitch = cardW + 20.0f * cardScale * s;
+        const float cx = g_layout.strip.l + g_layout.strip.W() / 2.0f;
+
+        // Keep the farthest visible card clear of the create card; narrow
         // monitors show fewer neighbours instead of shrinking the wheel.
         const float rightLimit = g_layout.strip.r - createW - 24.0f * s;
         const float maxOffset = std::max(0.0f, rightLimit - cx);
         const float visibleDepth =
             std::max(0.5f, std::min(2.25f, maxOffset / (pitch * 0.82f) - 0.6f));
+
+        for (int i = 0; i < count; i++)
+        {
+            const float d = WrapDelta(static_cast<float>(i) - g_carouselPos, count);
+            const float ad = std::fabs(d);
+
+            PillView pill;
+            pill.desktop = i;
+            pill.hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
+            pill.depth = d;
+            pill.visible = ad <= visibleDepth;
+            if (pill.visible)
+            {
+                pill.scale = std::max(0.55f, 1.0f - 0.18f * ad);
+                pill.angle = std::max(-12.0f, std::min(12.0f, d * 4.5f));
+                pill.alpha =
+                    std::max(0.45f, 1.0f - 0.26f * std::max(0.0f, ad - 1.0f));
+
+                const float px = cx + d * pitch * 0.82f;
+                const float py = cy + std::min(12.0f * s, 2.5f * s * d * d);
+                pill.rect = {px - cardW / 2.0f, py - cardH / 2.0f,
+                             px + cardW / 2.0f, py + cardH / 2.0f};
+                pill.hit = TransformedBounds(pill.rect, pill.scale, pill.angle);
+
+                if (pill.hasClose)
+                    setCardClose(pill, cardScale);
+            }
+            g_pills.push_back(pill);
+        }
+
+        g_createRect = {g_layout.strip.r - createW - 12.0f * s,
+                        cy - createH / 2.0f, g_layout.strip.r - 12.0f * s,
+                        cy + createH / 2.0f};
+        return;
+    }
+
+    if (cards)
+    {
+        // Flat row of cards: shrink the row if it cannot fit next to the
+        // create card.
+        const float cardGap = 14.0f * s;
+        const float available = g_layout.strip.W() - createW - cardGap;
+        const float needed = count * cardW + (count - 1) * cardGap;
+        const float fit = needed > available && needed > 0.0f
+                              ? std::max(0.18f, available / needed)
+                              : 1.0f;
+        const float drawW = cardW * fit;
+        const float drawH = cardH * fit;
+        const float gap = cardGap * fit;
+        const float total =
+            count * drawW + (count - 1) * gap + createW + cardGap;
+        float cursor = g_layout.strip.l + (g_layout.strip.W() - total) / 2.0f;
+
+        for (int i = 0; i < count; i++)
+        {
+            PillView pill;
+            pill.desktop = i;
+            pill.rect = {cursor, cy - drawH / 2.0f, cursor + drawW,
+                         cy + drawH / 2.0f};
+            pill.hit = pill.rect;
+            pill.hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
+            if (pill.hasClose)
+                setCardClose(pill, cardScale * fit);
+            g_pills.push_back(pill);
+            cursor += drawW + gap;
+        }
+
+        g_createRect = {cursor, cy - createH / 2.0f, cursor + createW,
+                        cy + createH / 2.0f};
+        return;
+    }
+
+    if (wheel)
+    {
+        // The carousel keeps one tab width so the wheel stays symmetric; long
+        // names are ellipsized. Chips use a compact fixed width, while the
+        // rename editor gets room because it is always centred while editing.
+        const float pillW = chips
+            ? (g_renameDesktop >= 0 ? 220.0f * s : 96.0f * s)
+            : (g_renameDesktop >= 0
+                   ? 380.0f * s
+                   : std::max(160.0f * s, std::min(320.0f * s, maxWidth)));
+        const float pitch = pillW + (chips ? 20.0f : 16.0f) * s;
+        const float cx = g_layout.strip.l + g_layout.strip.W() / 2.0f;
+
+        // Keep the farthest visible tab clear of the create button; narrow
+        // monitors show fewer neighbours instead of shrinking the wheel.
+        const float rightLimit = g_layout.strip.r - createW - 24.0f * s;
+        const float maxOffset = std::max(0.0f, rightLimit - cx);
+        const float depthMargin = chips ? 0.4f : 0.15f;
+        const float visibleDepth = std::max(
+            0.5f, std::min(2.25f, maxOffset / (pitch * 0.82f) - depthMargin));
 
         for (int i = 0; i < count; i++)
         {
@@ -2164,18 +2398,24 @@ static void RebuildPills()
 
                 if (pill.hasClose)
                 {
-                    pill.closeRect = {pill.rect.r - 32.0f * s,
-                                      pill.rect.t + 8.0f * s,
-                                      pill.rect.r - 8.0f * s,
-                                      pill.rect.t + 32.0f * s};
-                    pill.closeHit = TransformedBounds(pill.closeRect, pill.scale,
-                                                      pill.angle);
+                    if (chips)
+                    {
+                        setChipClose(pill, std::min(chipD, pillW - 4.0f * s));
+                    }
+                    else
+                    {
+                        pill.closeRect = {pill.rect.r - 28.0f * s,
+                                          pill.rect.t + 6.0f * s,
+                                          pill.rect.r - 6.0f * s,
+                                          pill.rect.b - 6.0f * s};
+                        pill.closeHit = TransformedBounds(pill.closeRect,
+                                                          pill.scale, pill.angle);
+                    }
                 }
             }
             g_pills.push_back(pill);
         }
 
-        const float createH = 42.0f * s;
         g_createRect = {g_layout.strip.r - createW - 12.0f * s,
                         cy - createH / 2.0f, g_layout.strip.r - 12.0f * s,
                         cy + createH / 2.0f};
@@ -2207,15 +2447,26 @@ static void RebuildPills()
         pill.hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
         if (pill.hasClose)
         {
-            pill.closeRect = {pill.rect.r - 28.0f * s, pill.rect.t + 6.0f * s,
-                              pill.rect.r - 6.0f * s, pill.rect.b - 6.0f * s};
-            pill.closeHit = pill.closeRect;
+            if (chips)
+            {
+                setChipClose(pill, std::min(chipD, w - 4.0f * s));
+            }
+            else
+            {
+                pill.closeRect = {pill.rect.r - 28.0f * s,
+                                  pill.rect.t + 6.0f * s,
+                                  pill.rect.r - 6.0f * s,
+                                  pill.rect.b - 6.0f * s};
+                pill.closeHit = pill.closeRect;
+            }
         }
         g_pills.push_back(pill);
         cursor += w + gap;
     }
 
-    g_createRect = {cursor, y, cursor + createW, y + pillH};
+    const float createY = g_layout.strip.t +
+                          (g_layout.strip.H() - createH) / 2.0f;
+    g_createRect = {cursor, createY, cursor + createW, createY + createH};
 }
 
 // The visible pill under the cursor. Overlapping carousel neighbours resolve to
@@ -2269,7 +2520,12 @@ static void UpdateLayout()
         g_searchClearRect = {};
     }
 
-    const float stripH = (g_stripStyle == StripStyle::Carousel ? 264.0f : 64.0f) * s;
+    const float stripH =
+        (UsesCards()
+             ? 224.0f * g_cardScale + 40.0f
+             : g_stripStyle == StripStyle::Carousel
+                   ? (UsesChips() ? 112.0f : 96.0f)
+                   : (UsesChips() ? 92.0f : 64.0f)) * s;
     const float stripBottom = g_layout.h - 46.0f * s;
     g_layout.strip = {margin, stripBottom - stripH, g_layout.w - margin, stripBottom};
     g_layout.grid = {margin, g_layout.search.b + 42.0f * s, g_layout.w - margin,
@@ -2576,6 +2832,157 @@ static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
     }
 }
 
+// A face-down playing card used as the create-desktop button. Clicking it or
+// pulling it downward creates a new desktop.
+static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
+{
+    const float s = g_scale;
+    const float lift = pull * 16.0f * s;
+    const RectF card = {rect.l, rect.t + lift, rect.r, rect.b + lift};
+    const float radius = 12.0f * s;
+
+    const RectF shadow = {card.l, card.t + 8.0f * s, card.r,
+                          card.b + 14.0f * s};
+    FillRound(shadow, radius + 2.0f * s, 0xFF000000, 0.34f + 0.18f * pull);
+
+    const UINT32 back =
+        MixColor(g_theme.pillFill, g_theme.accent, hovered ? 0.28f : 0.18f);
+    FillRound(card, radius, back, 1.0f);
+
+    // Card-back lattice, clipped just inside the rounded edge.
+    const RectF inner = {card.l + 12.0f * s, card.t + 12.0f * s,
+                         card.r - 12.0f * s, card.b - 12.0f * s};
+    g_d2dTarget->PushAxisAlignedClip(
+        D2D1::RectF(inner.l, inner.t, inner.r, inner.b),
+        D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    g_d2dBrush->SetColor(ColorOf(g_theme.accent, 0.20f));
+    const float step = 13.0f * s;
+    for (float x = inner.l - inner.H(); x < inner.r; x += step)
+    {
+        g_d2dTarget->DrawLine(D2D1::Point2F(x, inner.b),
+                              D2D1::Point2F(x + inner.H(), inner.t),
+                              g_d2dBrush, 1.0f * s);
+    }
+    g_d2dTarget->PopAxisAlignedClip();
+
+    StrokeRound(card, radius, g_theme.accent,
+                (hovered || pull > 0.15f) ? 2.2f * s : 1.4f * s,
+                hovered ? 0.95f : 0.55f);
+
+    g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.90f));
+    const float pcx = (card.l + card.r) / 2.0f;
+    const float pcy = (card.t + card.b) / 2.0f - 8.0f * s;
+    const float arm = 13.0f * s;
+    g_d2dTarget->DrawLine(D2D1::Point2F(pcx - arm, pcy),
+                          D2D1::Point2F(pcx + arm, pcy), g_d2dBrush,
+                          2.0f * s);
+    g_d2dTarget->DrawLine(D2D1::Point2F(pcx, pcy - arm),
+                          D2D1::Point2F(pcx, pcy + arm), g_d2dBrush,
+                          2.0f * s);
+
+    const RectF label = {card.l + 6.0f * s, card.b - 34.0f * s,
+                         card.r - 6.0f * s, card.b - 8.0f * s};
+    DrawTextBlock(L"New desktop", g_fmtHint, label, g_theme.text,
+                  DWRITE_TEXT_ALIGNMENT_CENTER, 0.62f);
+}
+
+// A desktop tab rendered as a poker chip: coloured rim with edge spots, the
+// desktop number on the centre disc, and the name on a small label below.
+static void DrawChipTab(const PillView& pill, bool active, bool hovered,
+                        bool selected, bool closeHovered)
+{
+    const float s = g_scale;
+    const float alpha = pill.alpha;
+    const RectF tab = pill.rect;
+    const float baseD = (g_stripStyle == StripStyle::Carousel ? 64.0f : 52.0f) * s;
+    const float chipD = std::max(24.0f * s, std::min(baseD, tab.W() - 4.0f * s));
+    const float r = chipD / 2.0f;
+    const float cx = tab.l + tab.W() / 2.0f;
+    const float cy = tab.t + 2.0f * s + r;
+
+    static const UINT32 chipColors[] = {0xFFB3261E, 0xFF1E5AA8, 0xFF1E7A46,
+                                        0xFF26262B, 0xFF6A3D9A, 0xFFB45F06};
+    UINT32 chipColor = chipColors[pill.desktop % ARRAYSIZE(chipColors)];
+    if (hovered)
+        chipColor = MixColor(chipColor, 0xFFFFFFFF, 0.12f);
+
+    if (!StripBackgroundVisible())
+    {
+        const RectF shadow = {cx - r, cy - r + 5.0f * s, cx + r,
+                              cy + r + 8.0f * s};
+        FillRound(shadow, r, 0xFF000000, 0.30f * alpha);
+    }
+
+    const RectF outer = {cx - r, cy - r, cx + r, cy + r};
+    FillRound(outer, r, chipColor, alpha);
+    const float innerR = r * 0.78f;
+    const RectF inner = {cx - innerR, cy - innerR, cx + innerR, cy + innerR};
+    FillRound(inner, innerR, MixColor(chipColor, 0xFFFFFFFF, 0.10f), alpha);
+
+    // Casino edge spots around the rim.
+    D2D1::Matrix3x2F saved;
+    g_d2dTarget->GetTransform(&saved);
+    for (int k = 0; k < 8; k++)
+    {
+        g_d2dTarget->SetTransform(
+            D2D1::Matrix3x2F::Rotation(static_cast<float>(k) * 45.0f,
+                                      D2D1::Point2F(cx, cy)) *
+            saved);
+        const RectF dash = {cx - 2.2f * s, cy - r, cx + 2.2f * s,
+                            cy - r + 7.0f * s};
+        FillRound(dash, 2.0f * s, 0xFFFFFFFF, 0.82f * alpha);
+    }
+    g_d2dTarget->SetTransform(saved);
+
+    const float discR = r * 0.55f;
+    const RectF disc = {cx - discR, cy - discR, cx + discR, cy + discR};
+    FillRound(disc, discR, 0xFFF8F5EC, alpha);
+    DrawTextBlock(std::to_wstring(pill.desktop + 1), g_fmtPillLarge, disc,
+                  chipColor, DWRITE_TEXT_ALIGNMENT_CENTER, alpha);
+
+    if (selected || active)
+        StrokeRound(outer, r, g_theme.accent, (selected ? 2.6f : 2.0f) * s,
+                    0.95f * alpha);
+    else if (hovered)
+        StrokeRound(outer, r, 0xFFFFFFFF, 1.5f * s, 0.65f * alpha);
+
+    const bool renaming = g_renameDesktop == pill.desktop;
+    const std::wstring& name =
+        renaming ? g_renameText : g_desktops[pill.desktop].name;
+    const RectF label = {tab.l + 2.0f * s, cy + r + 2.0f * s,
+                         tab.r - 2.0f * s, tab.b};
+    if (!StripBackgroundVisible())
+        FillRound(label, 8.0f * s, g_theme.pillFill, 0.85f * alpha);
+    DrawTextBlock(name, g_fmtHint, label, g_theme.text,
+                  DWRITE_TEXT_ALIGNMENT_CENTER, 0.85f * alpha);
+
+    if (renaming && ((GetTickCount64() / 530) % 2) == 0)
+    {
+        const float textW = MeasureTextWidth(g_renameText, g_fmtHint);
+        const float startX = label.l + (label.W() - textW) / 2.0f;
+        const float caretX = std::min(label.r, startX + textW + 1.0f * s);
+        g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.85f * alpha));
+        g_d2dTarget->DrawLine(
+            D2D1::Point2F(caretX, label.t + 2.0f * s),
+            D2D1::Point2F(caretX, label.b - 2.0f * s), g_d2dBrush, 1.4f * s);
+    }
+
+    if (pill.hasClose && !renaming)
+    {
+        g_d2dBrush->SetColor(
+            ColorOf(0xFFFFFFFF, (closeHovered ? 0.95f : 0.55f) * alpha));
+        const float ccx = pill.closeRect.l + pill.closeRect.W() / 2.0f;
+        const float ccy = pill.closeRect.t + pill.closeRect.H() / 2.0f;
+        const float arm = 3.8f * s;
+        g_d2dTarget->DrawLine(D2D1::Point2F(ccx - arm, ccy - arm),
+                              D2D1::Point2F(ccx + arm, ccy + arm), g_d2dBrush,
+                              1.4f * s);
+        g_d2dTarget->DrawLine(D2D1::Point2F(ccx + arm, ccy - arm),
+                              D2D1::Point2F(ccx - arm, ccy + arm), g_d2dBrush,
+                              1.4f * s);
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // RENDER
 
@@ -2650,8 +3057,10 @@ static void RenderScene(HDC dc)
         FillRound(full, 0.0f, g_theme.background, baseScrim);
 
     // Header title.
-    const RectF titleRect = {56.0f * s, 40.0f * s, 340.0f * s, 40.0f * s + 46.0f * s};
-    DrawTextBlock(L"Task View", g_fmtTitle, titleRect, g_theme.text,
+    const float titleRight =
+        std::max(56.0f * s + 1.0f, g_layout.search.l - 24.0f * s);
+    const RectF titleRect = {56.0f * s, 40.0f * s, titleRight, 40.0f * s + 46.0f * s};
+    DrawTextBlock(g_titleText, g_fmtTitle, titleRect, g_theme.text,
                   DWRITE_TEXT_ALIGNMENT_LEADING, 0.92f);
 
     // Search field (hidden unless activated when "Always show search" is off).
@@ -2855,21 +3264,21 @@ static void RenderScene(HDC dc)
                       DWRITE_TEXT_ALIGNMENT_TRAILING, 0.55f);
     }
 
-    // Desktop strip. The panel is optional so the pills can float over the
-    // desktop, which is the default for the carousel.
+    // Desktop strip. The panel is optional so the tabs can float over the
+    // desktop, which is the default for the carousel and card wheel.
     if (StripBackgroundVisible())
     {
         FillRound(g_layout.strip, 14.0f * s, g_theme.stripFill, 0.90f);
         StrokeRound(g_layout.strip, 14.0f * s, g_theme.text, 1.0f * s, 0.07f);
     }
 
-    // Farthest pills first so the centred one stays on top as the wheel turns.
+    // Farthest tabs first so the centred one stays on top as the wheel turns.
     int drawOrder[64] = {};
     int drawCount = 0;
     for (int i = 0; i < static_cast<int>(g_pills.size()) && drawCount < 64; i++)
         if (g_pills[i].visible)
             drawOrder[drawCount++] = i;
-    if (g_stripStyle == StripStyle::Carousel)
+    if (IsWheel())
         std::sort(drawOrder, drawOrder + drawCount, [](int a, int b) {
             return std::fabs(g_pills[a].depth) > std::fabs(g_pills[b].depth);
         });
@@ -2882,7 +3291,7 @@ static void RenderScene(HDC dc)
         const bool hovered = g_hoverPill == i;
         const bool selected = g_focusStrip && pill.desktop == g_desktopSelected;
 
-        if (g_stripStyle == StripStyle::Carousel)
+        if (IsWheel())
         {
             const D2D1_POINT_2F centre =
                 D2D1::Point2F((pill.rect.l + pill.rect.r) / 2.0f,
@@ -2890,9 +3299,22 @@ static void RenderScene(HDC dc)
             g_d2dTarget->SetTransform(
                 D2D1::Matrix3x2F::Scale(pill.scale, pill.scale, centre) *
                 D2D1::Matrix3x2F::Rotation(pill.angle, centre));
+        }
+
+        if (UsesCards())
+        {
             DrawDesktopCard(pill, active, hovered, selected,
                             g_hoverPillClose == i);
-            g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
+            if (IsWheel())
+                g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
+            continue;
+        }
+
+        if (UsesChips())
+        {
+            DrawChipTab(pill, active, hovered, selected, g_hoverPillClose == i);
+            if (IsWheel())
+                g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
             continue;
         }
 
@@ -2962,29 +3384,39 @@ static void RenderScene(HDC dc)
                                   1.4f * s);
         }
 
-        if (g_stripStyle == StripStyle::Carousel)
+        if (IsWheel())
             g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
     }
 
-    // Create-desktop button.
-    if (!StripBackgroundVisible())
+    // Create-desktop button. Playing-card mode gets a face-down card; chip
+    // mode gets a round chip; everything else gets a rounded square.
+    if (UsesCards())
     {
-        const RectF shadow = {g_createRect.l, g_createRect.t + 5.0f * s,
-                              g_createRect.r, g_createRect.b + 9.0f * s};
-        FillRound(shadow, 12.0f * s, 0xFF000000, 0.30f);
+        DrawCreateCard(g_createRect, g_hoverCreate, g_createPull);
     }
-    FillRound(g_createRect, 10.0f * s,
-              g_hoverCreate ? g_theme.pillActive : g_theme.pillFill, 1.0f);
-    StrokeRound(g_createRect, 10.0f * s, g_theme.text, 1.2f * s, 0.10f);
+    else
     {
+        const float createR = UsesChips() ? g_createRect.W() / 2.0f : 10.0f * s;
+        if (!StripBackgroundVisible())
+        {
+            const RectF shadow = {g_createRect.l, g_createRect.t + 5.0f * s,
+                                  g_createRect.r, g_createRect.b + 9.0f * s};
+            FillRound(shadow, UsesChips() ? createR : 12.0f * s, 0xFF000000,
+                      0.30f);
+        }
+        FillRound(g_createRect, createR,
+                  g_hoverCreate ? g_theme.pillActive : g_theme.pillFill, 1.0f);
+        StrokeRound(g_createRect, createR, g_theme.text, 1.2f * s, 0.10f);
         g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.80f));
         const float pcx = g_createRect.l + g_createRect.W() / 2.0f;
         const float pcy = g_createRect.t + g_createRect.H() / 2.0f;
         const float arm = 7.0f * s;
-        g_d2dTarget->DrawLine(D2D1::Point2F(pcx - arm, pcy), D2D1::Point2F(pcx + arm, pcy),
-                              g_d2dBrush, 1.6f * s);
-        g_d2dTarget->DrawLine(D2D1::Point2F(pcx, pcy - arm), D2D1::Point2F(pcx, pcy + arm),
-                              g_d2dBrush, 1.6f * s);
+        g_d2dTarget->DrawLine(D2D1::Point2F(pcx - arm, pcy),
+                              D2D1::Point2F(pcx + arm, pcy), g_d2dBrush,
+                              1.6f * s);
+        g_d2dTarget->DrawLine(D2D1::Point2F(pcx, pcy - arm),
+                              D2D1::Point2F(pcx, pcy + arm), g_d2dBrush,
+                              1.6f * s);
     }
 
     // Hint line.
@@ -3288,6 +3720,8 @@ static void ShowOverlay()
     g_renameText.clear();
     g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
     g_hoverCreate = g_hoverSearch = g_hoverSearchClear = false;
+    g_createDragging = false;
+    g_createPull = 0.0f;
     g_busy = false;
     g_pendingMove = false;
 
@@ -3335,6 +3769,14 @@ static void HideOverlay(bool immediate)
 {
     if (!g_visible)
         return;
+
+    if (g_createDragging)
+    {
+        g_createDragging = false;
+        g_createPull = 0.0f;
+        if (GetCapture() == g_overlay)
+            ReleaseCapture();
+    }
 
     if (immediate)
     {
@@ -3577,6 +4019,26 @@ static void OnLeftClick(int x, int y)
     }
 }
 
+static void MoveStripSelection(int delta)
+{
+    const int count = static_cast<int>(g_desktops.size());
+    if (count <= 0)
+        return;
+
+    int next = g_desktopSelected + delta;
+    if (g_wrapDesktopStrip)
+        next = ((next % count) + count) % count;
+    else
+        next = std::max(0, std::min(count - 1, next));
+
+    if (next == g_desktopSelected)
+        return;
+
+    g_desktopSelected = next;
+    KickCarousel();
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
 static void OnKeyDown(WPARAM key)
 {
     if (IsRenamingDesktop())
@@ -3739,9 +4201,7 @@ static void OnKeyDown(WPARAM key)
         }
         if (g_focusStrip)
         {
-            g_desktopSelected = std::max(0, g_desktopSelected - 1);
-            KickCarousel();
-            InvalidateRect(g_overlay, nullptr, FALSE);
+            MoveStripSelection(-1);
         }
         else
         {
@@ -3762,10 +4222,7 @@ static void OnKeyDown(WPARAM key)
         }
         if (g_focusStrip)
         {
-            g_desktopSelected = std::min(static_cast<int>(g_desktops.size()) - 1,
-                                         g_desktopSelected + 1);
-            KickCarousel();
-            InvalidateRect(g_overlay, nullptr, FALSE);
+            MoveStripSelection(1);
         }
         else
         {
@@ -3837,6 +4294,22 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         return 0;
     }
 
+    case WM_LBUTTONDOWN:
+    {
+        const int x = GET_X_LPARAM(lParam);
+        const int y = GET_Y_LPARAM(lParam);
+        if (UsesCards() &&
+            Contains(g_createRect, static_cast<float>(x), static_cast<float>(y)))
+        {
+            g_createDragging = true;
+            g_createDragStart = {x, y};
+            g_createPull = 0.0f;
+            SetCapture(hwnd);
+            return 0;
+        }
+        return 0;
+    }
+
     case WM_MOUSEMOVE:
     {
         if (!g_trackingMouse)
@@ -3847,7 +4320,19 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             TrackMouseEvent(&track);
             g_trackingMouse = true;
         }
-        UpdateHover(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+
+        const int x = GET_X_LPARAM(lParam);
+        const int y = GET_Y_LPARAM(lParam);
+        if (g_createDragging)
+        {
+            const float dy = static_cast<float>(
+                std::max(0, static_cast<int>(y - g_createDragStart.y)));
+            g_createPull = std::min(1.0f, dy / (70.0f * g_scale));
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
+
+        UpdateHover(x, y);
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     }
@@ -3859,10 +4344,30 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
 
+    case WM_CAPTURECHANGED:
+        g_createDragging = false;
+        g_createPull = 0.0f;
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+
     case WM_LBUTTONUP:
     {
         const int x = GET_X_LPARAM(lParam);
         const int y = GET_Y_LPARAM(lParam);
+        if (g_createDragging)
+        {
+            const bool pulled = g_createPull >= 0.45f;
+            const bool inside =
+                Contains(g_createRect, static_cast<float>(x), static_cast<float>(y));
+            g_createDragging = false;
+            g_createPull = 0.0f;
+            if (GetCapture() == hwnd)
+                ReleaseCapture();
+            InvalidateRect(hwnd, nullptr, FALSE);
+            if (pulled || inside)
+                BeginDesktopAction(-1, true, false);
+            return 0;
+        }
         UpdateHover(x, y);
         OnLeftClick(x, y);
         return 0;
@@ -3979,23 +4484,13 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             {
             case L'h':
                 if (g_focusStrip)
-                {
-                    g_desktopSelected = std::max(0, g_desktopSelected - 1);
-                    KickCarousel();
-                    InvalidateRect(hwnd, nullptr, FALSE);
-                }
+                    MoveStripSelection(-1);
                 else
                     MoveSelection(-1, 0);
                 return 0;
             case L'l':
                 if (g_focusStrip)
-                {
-                    g_desktopSelected =
-                        std::min(static_cast<int>(g_desktops.size()) - 1,
-                                 g_desktopSelected + 1);
-                    KickCarousel();
-                    InvalidateRect(hwnd, nullptr, FALSE);
-                }
+                    MoveStripSelection(1);
                 else
                     MoveSelection(1, 0);
                 return 0;
@@ -4092,7 +4587,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         }
         if (wParam == kTimerCarousel)
         {
-            if (g_stripStyle != StripStyle::Carousel || g_desktops.empty())
+            if (!IsWheel() || g_desktops.empty())
             {
                 KillTimer(hwnd, kTimerCarousel);
                 return 0;
@@ -4349,6 +4844,12 @@ static DWORD WINAPI UiThreadProc(LPVOID)
             if (message.hwnd == nullptr && message.message == WM_UI_SETTINGS)
             {
                 LoadSettings();
+                // A settings change can switch the strip out of card mode while
+                // the create card is being pulled; drop the stale drag state.
+                g_createDragging = false;
+                g_createPull = 0.0f;
+                if (g_overlay && GetCapture() == g_overlay)
+                    ReleaseCapture();
                 // The accent blur only takes effect while the overlay is hidden
                 // (see ApplyBackdrop), so re-applying it to a visible overlay
                 // would leave the flat fill behind it. It is applied on the next
