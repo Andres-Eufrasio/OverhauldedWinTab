@@ -81,6 +81,17 @@ Window previews are real DWM thumbnails:
   framed inside the card and window chrome (title, close button) lives in the
   card header, never over the preview.
 
+When `Appearance.WindowTabs` is `chips`, the same thumbnail is placed in a
+centered square inside a circular chip. The square is intentional: DWM
+thumbnails cannot be clipped to a circle, so a round preview would show square
+corners over the rim. `WindowChipContent` can replace the thumbnail with a large
+application icon or with no center content at all. The title is drawn one
+character at a time along the top arc by `DrawArcText()`: each character is
+measured with `MeasureTextWidth()`, positioned on the arc, and rotated by
+`DrawRotatedTextBlock()`. The chip itself is drawn with an outer disc, a lighter
+inner ring, twelve white edge spots, a darker center disc, and a contrast-aware
+title color from `ChipTextColor()`.
+
 The panel background is a translucent scrim over DWM glass
 (`DwmExtendFrameIntoClientArea` with `-1` margins). The scrim color and alpha are
 configurable, and the material underneath is selectable:
@@ -136,6 +147,13 @@ the close-button red). `ResolveTheme()` fills it from the selected `Appearance.T
 The renderer reads `g_theme` everywhere instead of literals, so the selected
 palette and the backdrop effect stay independent.
 
+`ResolveTheme()` also rebuilds `g_themeChipColors`, a six-entry set derived from
+the accent (accent, lighter, darker, danger-tinted, text-tinted and a pale
+highlight). `ChipColorForIndex()` resolves the shared **Chip colors** setting for
+both desktop and window chips: `theme` cycles those derived shades, `single`
+uses `ChipColor`, `palette` cycles the comma-separated `ChipPalette`, and
+`classic` keeps the original fixed casino set.
+
 ## 4. Window list
 
 `EnumWindows` collects candidates and filters:
@@ -150,6 +168,15 @@ palette and the backdrop effect stay independent.
 
 The result is kept in z-order, which closely follows the most-recently-used
 order. A search string filters the list by window title or application name.
+
+`g_filtered` is the search result, while `g_display` is the subset shown in the
+grid. With **Held windows** set to a side dock, `RebuildDisplayList()` removes
+held entries from `g_display` and `UpdateLayout()` reserves a left or right dock
+column before measuring the grid. `g_dockCards` stores the held entries in the
+same `CardView` shape as the grid, so the dock can use either window cards or
+poker chips and the same activation, close and hover paths. Held dock entries
+carry a `filtered` index of `-1` when the current search hides them; activation
+and closing use the stable window index (`entry`) instead.
 
 ## 5. Virtual desktops
 
@@ -202,11 +229,27 @@ another desktop and back. The documented API is kept as a fallback.
 
 State is intentionally small:
 
-- `g_filtered` is the visible index list, `g_selected` the cursor into it and
-  `g_page` the current grid page.
+- `g_filtered` is the search result, `g_display` the filtered indices shown in
+  the grid, `g_selected` the cursor into `g_display` (stored as a filtered index)
+  and `g_page` the current grid page. Keeping the cursor in filtered space means
+  activation and close keep working when a search is active. `g_selected` is
+  `-1` when the display list is empty, so Enter/Delete are no-ops instead of
+  acting on a held window that only exists in the dock.
+- `g_cards` holds the visible grid cards and `g_dockCards` the held side-dock
+  items; both use `CardView` with `entry`, `filtered`, `hit` and `lift` fields.
+  `CardView::hit` keeps the unlifted area while `rect` follows the lift; hover
+  tests both, so neither edge flickers when the visual card moves under the
+  pointer.
 - `Tab` toggles focus between the grid and the desktop strip.
 - `UpdateLayout` computes both the scene geometry and the per-card / per-pill hit
   rectangles in physical pixels, so mouse hit testing and rendering always agree.
+- `Appearance.DesktopSelection` is resolved in `RebuildPills()`: `lift` raises
+  the selected tab (or the active tab when the strip is not focused) by 6-10 px,
+  shifts its hit and close rectangles with it, and suppresses the accent outline
+  in all three desktop renderers.
+- `Appearance.LiftHeldWindows`, `LiftHoveredWindows` and `LiftSelectedWindow`
+  add the same lift to window cards and chips. Held dock items use the held lift
+  when it is enabled, and the hover lift when that option is enabled.
 - `g_renameDesktop` / `g_renameText` hold the inline desktop rename editor. The
   pill width and the caret position are measured with DirectWrite
   (`MeasureTextWidth`) instead of an estimated per-character advance, so long
@@ -244,9 +287,11 @@ uses a fixed 160 x 224 card multiplied by `Appearance.CardSize`
 (small 0.82, medium 1.0, large 1.22) and the strip is `224 * scale + 40` px tall
 (264 px at medium) so the rotated cards stay inside it. The carousel positions
 cards on the wheel; the flat row shrinks them if the row cannot fit. The create
-button becomes a face-down card: `DrawCreateCard` paints the card back, lattice
-and plus, and `WM_LBUTTONDOWN`/`WM_MOUSEMOVE`/`WM_LBUTTONUP` turn a downward pull
-into the same create action as a click. `DrawDesktopCard` paints the ivory face,
+button becomes a face-down card: `DrawCreateCard` paints a vector card back with
+a double gold frame, a clipped diagonal lattice with diamond pips, an oval
+medallion and ornament ring, a centered plus and a `New desktop` banner, and
+`WM_LBUTTONDOWN`/`WM_MOUSEMOVE`/`WM_LBUTTONUP` turn a downward pull into the same
+create action as a click. `DrawDesktopCard` paints the ivory face,
 corner rank and suit (rotated 180 degrees in the bottom corner), a large suit
 pip, and the desktop name; the suit is `desktop & 3`, so desktops cycle through
 spades, hearts, diamonds and clubs. `Appearance.StripBackground` controls the
@@ -258,6 +303,16 @@ route around the wheel, and `KickCarousel()` restarts the timer when the target
 changes. Rendering sorts visible tabs farthest-first and applies a
 scale/rotation transform about each tab centre; hit testing uses the transformed
 bounding box and prefers the tab closest to the centre.
+
+`Appearance.WindowTabs` selects `DrawWindowCard()` or `DrawWindowChip()` for
+grid and dock items. `Appearance.WindowChipContent` selects the live DWM
+thumbnail, a large app icon or a name-only center. DWM thumbnails are skipped
+when the chip content is icon or blank, because the center does not show a
+preview. `DrawArcText()` lays the title on the top rim and trims it with an ellipsis
+when it exceeds the 150-degree arc. Hover and close rectangles are tracked
+separately for the grid (`g_hoverCard` / `g_hoverClose`) and the dock
+(`g_hoverDock` / `g_hoverDockClose`), and `OnLeftClick()` uses the stable
+`CardView::entry` for dock activation and closing.
 
 `Behavior.WrapDesktopStrip` controls `MoveStripSelection()`, the shared handler
 for `Left`/`Right` and `h`/`l` while the strip has focus. With it on, the
@@ -277,7 +332,10 @@ switches desktops and `Shift` + `Left`/`Right` moves the selected window to an
 adjacent desktop. Bare `1`-`9` jump to that desktop and `Shift` + `1`-`9` move
 the selected window there; `M` also sets `g_pendingMove`, after which the next
 `1`-`9` moves the selected window and any other key cancels. `U` toggles the
-hold on the selected window, and held cards are framed in their hold colour.
+hold on the selected window, or on the held dock item under the pointer, and held
+cards are framed in their hold colour. With the dock enabled, held windows are
+removed from `g_display`, so releasing one uses hover plus `U` rather than grid
+navigation.
 
 Activating a window hides the overlay immediately (no reverse animation) and
 then restores and foregrounds the target. Closing a window posts `WM_CLOSE`,

@@ -38,6 +38,25 @@ Guiding rules:
 - `Behavior.WrapDesktopStrip` wraps `Left`/`Right` and `h`/`l` from the last
   desktop to the first (v0.7.0).
 - `Appearance.Title` replaces the hardcoded `Task View` heading (v0.7.0).
+- `Appearance.WindowTabs` (`cards` / `chips`) and
+  `Appearance.WindowChipContent` (`preview` / `icon` / `blank`) add optional
+  poker-chip window tabs with a title curved around the rim (v0.8.0).
+- `Appearance.ChipColorMode` (`theme` / `single` / `palette` / `classic`),
+  `ChipColor` and `ChipPalette` are shared by desktop and window chips. Theme
+  mode derives shades from the active accent; Classic restores the old fixed
+  casino colors (v0.8.0).
+- `Appearance.DesktopSelection` (`highlight` / `lift`) gives every desktop tab
+  style an accent-outline or pick-up selection style (v0.8.0).
+- `Appearance.HeldDock` (`off` / `left` / `right`) moves held windows into a
+  side dock that supports both window cards and poker chips (v0.8.0).
+- `Appearance.LiftHeldWindows`, `LiftHoveredWindows` and `LiftSelectedWindow`
+  add the lifted, picked-up appearance to window cards and chips (v0.8.0).
+- The playing-card create button is now a vector card back with a double frame,
+  lattice, medallion and ornament ring (v0.8.0).
+
+The only deliberate default changes in v0.8.0 are the chip colors (theme shades;
+select **Classic casino colors** to keep the old fixed palette) and the lifted
+held-window look. Every other new setting is opt-in.
 
 ## Phase 1 - Visual customization pack
 

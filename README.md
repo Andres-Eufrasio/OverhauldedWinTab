@@ -21,7 +21,11 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
+- Optional poker-chip window tabs with a live preview, app icon or name-only centre
 - Optional playing-card, poker-chip and carousel desktop tabs
+- Accent-outline or pick-up/lift selection for every desktop tab style
+- Held windows can move into a left or right side dock and look slightly lifted
+- Optional lift on window hover and keyboard selection
 - Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
@@ -51,6 +55,11 @@ Solid or transparent) behind the overview.
 The overview is a persistent window prepared in the background, so `Win` + `Tab`
 opens immediately instead of building the interface from scratch every time.
 
+The playing-card create button is a real vector card back rather than a flat
+placeholder: a double gold frame, a fine diagonal lattice with diamond pips, an
+oval medallion with a ring of ornaments, and a centered plus. It is drawn
+entirely with Direct2D primitives, so it stays crisp at every DPI and card size.
+
 ## Controls
 
 | Input | Action |
@@ -66,7 +75,7 @@ opens immediately instead of building the interface from scratch every time.
 | `M` then `1`-`9` | Move the selected window to that numbered desktop |
 | `1`-`9` | Jump to that numbered virtual desktop |
 | `Shift` + `1`-`9` | Move the selected window to that numbered desktop |
-| `U` | Hold or release the selected window; held windows follow you across desktops |
+| `U` | Hold or release the selected window, or the held dock item under the pointer; held windows follow you across desktops |
 | `F2` | Rename the selected (or current) virtual desktop |
 | `N` | Create a new virtual desktop (strip focused) |
 | `h` `j` `k` `l` | Vim movement (move through the grid / desktop strip) |
@@ -75,7 +84,8 @@ opens immediately instead of building the interface from scratch every time.
 | Typing while the search is focused | Filter windows by title or application |
 | Left click | Activate a window, or jump straight to a desktop |
 | Right click a desktop | Rename that virtual desktop |
-| Middle click on a card | Close that window |
+| Middle click on a card or dock item | Close that window |
+| Click a held dock item | Activate that window |
 | Click `+` on the strip | Create a new virtual desktop |
 | Pull the create card down | Create a new virtual desktop (playing-card tabs) |
 | Click `x` on the active desktop | Close the current virtual desktop |
@@ -102,6 +112,16 @@ movement keys.
 | Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
+| Window tabs | Regular cards, or poker chips with the window title curved around the top rim |
+| Window chip content | Live window preview, app icon, or name only |
+| Chip colors | Theme accent shades, a single color, a custom palette, or classic casino colors |
+| Chip color | Single chip color in `#RRGGBB` format (Single color mode) |
+| Chip palette | Comma-separated `#RRGGBB` colors cycled across desktop and window chips (Custom palette mode) |
+| Desktop selection | Accent outline, or pick-up/lift for the selected and active desktop tabs |
+| Held windows | Keep held windows in the grid, or dock them on the left or right |
+| Lift held windows | Raise windows held with `U` so they look picked up |
+| Lift hovered windows | Raise a window while the pointer is over it |
+| Lift selected window | Raise the keyboard-selected window in the grid |
 | Desktop strip | Flat row or rotating carousel |
 | Desktop tabs | Pills, poker chips, or playing cards |
 | Card size | Small, medium or large playing cards |
@@ -165,7 +185,10 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 - **Pills** (default) – the wide rounded tabs with the desktop number and name.
 - **Poker chips** – each desktop becomes a numbered casino chip with a coloured
   rim, white edge spots and the desktop name on a label underneath. The create
-  button becomes a round chip too.
+  button becomes a round chip too. The rim colors follow **Chip colors**: by
+  default they are shades derived from the theme accent, so the chips change with
+  the palette. Choose **Classic casino colors** for the original fixed set, or
+  define a single color or your own palette.
 - **Playing cards** – each desktop becomes a portrait card with its own suit
   (spades, hearts, diamonds, clubs, then back to spades). **Card size** makes the
   cards small, medium or large. In the carousel the cards float directly over the
@@ -176,6 +199,13 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 The old **Playing cards** value under **Desktop strip** is still accepted so
 existing settings keep working. New setups should use **Desktop tabs**.
 
+**Desktop selection** changes how the active and selected desktop tabs are
+marked. **Accent outline** (default) keeps the current accent border. **Lift**
+raises the selected tab, or the active tab when the strip is not focused, and
+skips the accent outline so the pick-up is the only selection cue. Lift works
+for pills, poker chips and playing cards in both the flat row and the carousel;
+the shadow deepens as the tab rises.
+
 **Desktop strip background** controls the panel behind the strip: **Auto**
 (default) keeps it for the flat row and hides it for the carousel, **Always show**
 brings it back, and **Always hide** makes the flat row float as well.
@@ -183,6 +213,40 @@ brings it back, and **Always hide** makes the flat row float as well.
 **Wrap desktop strip** (default on) lets `Left`/`Right` and `h`/`l` loop from the
 last desktop back to the first, so a seven-desktop carousel goes from 7 to 1
 instead of stopping at the edge.
+
+## Window chips
+
+**Window tabs** can draw each open window as a regular preview card or as a
+poker chip. The window title is curved around the top rim, one character at a
+time, and the centre can show:
+
+- **Live window preview** (default) – the real DWM thumbnail, framed in a
+  centered square inside the chip.
+- **App icon** – the application icon on a light centre disc.
+- **Name only** – just the curved title and the coloured chip surface.
+
+The live preview is a DWM thumbnail, which cannot be clipped to a circle, so it
+is deliberately kept as a centered square inside the chip rather than filling
+the whole rim. **Chip colors** is shared by window chips and desktop chips, so
+the two styles always match. Theme mode derives a set of accent shades; Classic
+keeps the original casino colors; Single color paints every chip the same; and
+Custom palette cycles through the comma-separated colors.
+
+## Held windows
+
+Press `U` to hold the selected window. Held windows follow you to every desktop
+you switch to, and they get a colored frame and corner dot. By default they stay
+in the grid. Set **Held windows** to **Dock on the left** or **Dock on the
+right** to move them into a side panel instead; the panel uses the same cards or
+poker chips as the grid, so the two modes stay visually consistent.
+
+The dock is not part of keyboard grid navigation. Click a dock item to activate
+it, middle-click it to close it, or hover it and press `U` to release it back
+into the grid. Held dock items stay visible while a search is active, so a held
+window is always one click away. **Lift held windows** is on by default so held
+items look picked up; **Lift hovered windows** and **Lift selected window** are
+optional and add the same raised look to the pointer hover and the keyboard
+cursor. The lift deepens the shadow and leaves the item otherwise unchanged.
 
 ## Search
 
