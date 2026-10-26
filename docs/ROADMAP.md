@@ -15,6 +15,17 @@ Guiding rules:
   magic numbers through `RenderScene`.
 - Each feature gets its own commit and a README + readme-block sync.
 
+## Implemented in v0.8.1
+
+- Poker chips follow the look of real clay casino chips: a moulded outer edge,
+  eight wide inlaid edge spots, a pressed groove between rim and face, a cream
+  centre inlay (or a ringed live preview) and a soft top-light sheen. The curved
+  window title now sits in the clay band around the inlay, clear of the preview
+  and the edge inserts.
+- The desktop chip, the window chip and the create chip share the new clay body.
+- The card draw runs before the desktop exists and lands in its predicted slot;
+  the throw arcs up and away instead of dropping.
+
 ## Implemented on `experimental`
 
 - `Appearance.DesktopStrip` (`flat` / `carousel`) - the carousel centres the
@@ -64,8 +75,8 @@ Guiding rules:
 - The held dock is a keyboard stage: `Tab` cycles grid -> dock -> strip -> grid,
   arrows and Vim keys select, `Enter` activates, `Delete` closes and `U`
   releases (v0.8.0).
-- `Appearance.CardAnimations` draws a card from the deck when creating a desktop
-  and throws the card away when closing one. Both animations use
+- `Appearance.CardAnimations` pulls a card from the deck before creating a
+  desktop and tosses the card up and away when closing one. Both animations use
   `Appearance.AnimationSpeed` (v0.8.0).
 - The window-tab `cards` value is labelled **Squares** in the UI because those
   tabs are square previews, not playing cards. The internal value stays `cards`

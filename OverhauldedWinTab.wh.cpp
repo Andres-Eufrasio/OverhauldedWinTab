@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.8.0
+// @version         0.8.1
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -43,8 +43,8 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Held windows can move into a left or right side dock, with full keyboard
   access and an optional floating (background-free) dock
 - Optional lift on window hover and keyboard selection
-- Animated playing cards: draw one from the deck when creating a desktop and
-  throw one away when closing it
+- Animated playing cards: draw one from the deck before creating a desktop and
+  toss one away when closing it
 - Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
@@ -131,7 +131,7 @@ movement keys.
 | Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
-| Window tabs | Square previews, or poker chips with the window title curved around the top rim |
+| Window tabs | Square previews, or poker chips with the window title curved around the centre inlay |
 | Window chip content | Live window preview, app icon, or name only |
 | Window chip size | Small, medium, large or extra-large poker-chip window tabs |
 | Chip colors | Theme accent shades, a single color, a custom palette, or classic casino colors |
@@ -205,9 +205,10 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 **Desktop tabs** chooses the tab shape for both layouts:
 
 - **Pills** (default) – the wide rounded tabs with the desktop number and name.
-- **Poker chips** – each desktop becomes a numbered casino chip with a coloured
-  rim, white edge spots and the desktop name on a label underneath. The create
-  button becomes a round chip too. The rim colors follow **Chip colors**: by
+- **Poker chips** – each desktop becomes a numbered casino chip: a clay-coloured
+  body with pressed cream edge inserts, a recessed ring and the desktop number on
+  a cream centre inlay, with the desktop name on a label underneath. The create
+  button becomes a matching chip. The chip colors follow **Chip colors**: by
   default they are shades derived from the theme accent, so the chips change with
   the palette. Choose **Classic casino colors** for the original fixed set, or
   define a single color or your own palette.
@@ -218,9 +219,10 @@ still controls how strongly the panel tint covers the backdrop in every theme.
   create button is a face-down card: click it, or pull it downward, to create a
   new desktop.
 
-With **Card animations** on, creating a desktop draws a card from the deck onto
-the new desktop tab, and closing one throws its card off the strip. The card
-animations use the same **Animation speed** as the open and close transitions.
+With **Card animations** on, creating a desktop first draws a card from the deck
+toward the new desktop's place in the strip, then creates the desktop; closing
+one tosses its card up and off the strip. The card animations use the same
+**Animation speed** as the open and close transitions.
 
 **Desktop selection** changes how the active and selected desktop tabs are
 marked. **Accent outline** (default) keeps the current accent border. **Lift**
@@ -240,13 +242,13 @@ instead of stopping at the edge.
 ## Window chips
 
 **Window tabs** can draw each open window as a square preview or as a
-poker chip. The window title is curved around the top rim, one character at a
-time, and the centre can show:
+poker chip. The window title is curved around the top of the centre inlay, one
+character at a time, and the centre can show:
 
 - **Live window preview** (default) – the real DWM thumbnail, clipped to a
-  circle inside the chip.
+  circle inside the chip and framed by a pressed ring.
 - **App icon** – the application icon on a light centre disc.
-- **Name only** – just the curved title and the coloured chip surface.
+- **Name only** – just the curved title and the coloured clay surface.
 
 **Window chip size** makes the chips small, medium, large or extra-large; the
 grid and the held dock both scale with it. The circular preview is a real DWM
@@ -408,7 +410,7 @@ OverhauldedWinTab is a pre-release project.
       - "chips": Poker chips
     - WindowChipContent: "preview"
       $name: Window chip content
-      $description: What to show in the middle of a poker-chip window. The window name always curves around the top rim.
+      $description: What to show in the middle of a poker-chip window. The window name always curves around the top of the centre inlay.
       $options:
       - "preview": Live window preview
       - "icon": App icon
@@ -927,8 +929,8 @@ static RectF g_createRect;
 static RectF g_searchClearRect;
 
 // Playing-card desktop animations. A draw animation lifts a face-down card
-// from the create deck onto a newly created desktop; a throw animation carries
-// a closing desktop card off the strip.
+// from the create deck before the new desktop is created; a throw animation
+// tosses a closing desktop card up and off the strip.
 enum class CardAnimationMode
 {
     None,
@@ -952,9 +954,7 @@ struct CardAnimation
     float duration = 0.4f;
 };
 static CardAnimation g_cardAnim;
-static bool g_pendingDrawCard = false;
-static size_t g_pendingDrawFromCount = 0;
-static ULONGLONG g_pendingDrawTick = 0;
+static bool g_createAfterDraw = false;
 
 // DWM thumbnails. Window squares keep their thumbnails on the overlay; window
 // chips use a separate top-level host so a full-screen layered mask can cover
@@ -1000,6 +1000,7 @@ static float BackgroundScrimAlpha();
 static bool DockExists();
 static void ClearCardAnimation();
 static void KickCardAnimation();
+static void StartDesktopCreateDraw();
 static void StartDesktopCardThrow(int desktop);
 static void ReleaseChipMaskSurface();
 static void SetChipLayersVisible(bool visible);
@@ -2506,24 +2507,25 @@ static UINT32 ChipColorForIndex(int index)
     }
 }
 
-static UINT32 ChipTextColor(UINT32 color)
+static float ColorLuminance(UINT32 color)
 {
     const float r = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
     const float g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
     const float b = static_cast<float>(color & 0xFF) / 255.0f;
-    const float luminance = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-    return luminance > 0.56f ? 0xFF11151C : 0xFFF8FAFC;
+    return 0.2126f * r + 0.7152f * g + 0.0722f * b;
+}
+
+static UINT32 ChipTextColor(UINT32 color)
+{
+    return ColorLuminance(color) > 0.56f ? 0xFF11151C : 0xFFF8FAFC;
 }
 
 // The desktop-chip number sits on a cream disc, so it needs a dark version of
 // the rim colour rather than the white-on-dark contrast used by window chips.
 static UINT32 ChipDiscInk(UINT32 color)
 {
-    const float r = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
-    const float g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
-    const float b = static_cast<float>(color & 0xFF) / 255.0f;
-    const float luminance = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-    return MixColor(color, 0xFF000000, luminance > 0.55f ? 0.55f : 0.18f);
+    return MixColor(color, 0xFF000000,
+                    ColorLuminance(color) > 0.55f ? 0.55f : 0.18f);
 }
 
 static bool StripBackgroundVisible()
@@ -2555,14 +2557,15 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
     g_pendingDesktopTries = 0;
 
     bool direct = false;
+    bool waitForCreateDraw = false;
     if (create)
     {
-        // The new desktop only exists after the shell handles Win+Ctrl+D, so
-        // remember the count and start the draw animation once it appears.
-        g_pendingDrawCard = g_cardAnimations && UsesCards();
-        g_pendingDrawFromCount = g_desktops.size();
-        g_pendingDrawTick = GetTickCount64();
-        SendChord('D', false);
+        // Pull a card from the deck first. The shell only creates the desktop
+        // when the ghost lands, so the new tab never appears before the draw.
+        StartDesktopCreateDraw();
+        waitForCreateDraw = g_createAfterDraw;
+        if (!waitForCreateDraw)
+            SendChord('D', false);
     }
     else if (closeActive)
     {
@@ -2589,7 +2592,7 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
         }
     }
 
-    if (g_overlay)
+    if (g_overlay && !waitForCreateDraw)
         SetTimer(g_overlay, kTimerDesktop, direct ? 400 : 700, nullptr);
     KickCarousel();
     InvalidateRect(g_overlay, nullptr, FALSE);
@@ -3441,12 +3444,40 @@ static void AddCircleGeometry(ID2D1GeometrySink* sink, float cx, float cy,
     sink->EndFigure(D2D1_FIGURE_END_CLOSED);
 }
 
+// Builds an annulus as a single path. Filled with the alternate rule, the inner
+// circle becomes a hole, which lets the window-chip preview show through the
+// layered mask.
+static ID2D1PathGeometry* CreateDonutGeometry(float cx, float cy, float outerR,
+                                              float innerR)
+{
+    if (!g_d2dFactory || outerR <= 0.0f || innerR >= outerR)
+        return nullptr;
+
+    ID2D1PathGeometry* geometry = nullptr;
+    if (FAILED(g_d2dFactory->CreatePathGeometry(&geometry)) || !geometry)
+        return nullptr;
+
+    ID2D1GeometrySink* sink = nullptr;
+    if (FAILED(geometry->Open(&sink)) || !sink)
+    {
+        geometry->Release();
+        return nullptr;
+    }
+
+    sink->SetFillMode(D2D1_FILL_MODE_ALTERNATE);
+    AddCircleGeometry(sink, cx, cy, outerR);
+    AddCircleGeometry(sink, cx, cy, innerR);
+    sink->Close();
+    sink->Release();
+    return geometry;
+}
+
 // Fills an annulus. The inner circle is left transparent, which lets the
 // window-chip preview show through the layered mask.
 static void FillDonut(float cx, float cy, float outerR, float innerR,
                       UINT32 color, float multiply = 1.0f)
 {
-    if (!g_d2dFactory || !g_d2dTarget || !g_d2dBrush || outerR <= 0.0f)
+    if (!g_d2dTarget || !g_d2dBrush || outerR <= 0.0f)
         return;
     if (innerR <= 0.0f)
     {
@@ -3456,26 +3487,11 @@ static void FillDonut(float cx, float cy, float outerR, float innerR,
     if (innerR >= outerR)
         return;
 
-    ID2D1PathGeometry* geometry = nullptr;
-    if (FAILED(g_d2dFactory->CreatePathGeometry(&geometry)) || !geometry)
+    ID2D1PathGeometry* geometry = CreateDonutGeometry(cx, cy, outerR, innerR);
+    if (!geometry)
         return;
-
-    ID2D1GeometrySink* sink = nullptr;
-    if (SUCCEEDED(geometry->Open(&sink)) && sink)
-    {
-        sink->SetFillMode(D2D1_FILL_MODE_ALTERNATE);
-        AddCircleGeometry(sink, cx, cy, outerR);
-        AddCircleGeometry(sink, cx, cy, innerR);
-        sink->Close();
-        sink->Release();
-
-        g_d2dBrush->SetColor(ColorOf(color, multiply));
-        g_d2dTarget->FillGeometry(geometry, g_d2dBrush);
-    }
-    else if (sink)
-    {
-        sink->Release();
-    }
+    g_d2dBrush->SetColor(ColorOf(color, multiply));
+    g_d2dTarget->FillGeometry(geometry, g_d2dBrush);
     geometry->Release();
 }
 
@@ -3567,6 +3583,171 @@ static void DrawArcText(const std::wstring& text, IDWriteTextFormat* format,
                              mid * 180.0f / 3.14159265f);
         angle += charWidth / radius;
     }
+}
+
+// A real clay chip is one colour with lighter or darker inlaid edge spots.
+// `face` is the slightly lit clay, `edge` the moulded side, `spot` the pressed
+// insert colour and `groove` the recess where the rim meets the centre.
+struct ChipPaint
+{
+    UINT32 face;
+    UINT32 edge;
+    UINT32 spot;
+    UINT32 groove;
+    UINT32 inlay;
+};
+
+static ChipPaint ChipPaintFor(UINT32 base)
+{
+    ChipPaint paint;
+    const bool pale = ColorLuminance(base) > 0.58f;
+    paint.face = MixColor(base, 0xFFFFFFFF, pale ? 0.02f : 0.07f);
+    paint.edge = MixColor(base, 0xFF000000, 0.42f);
+    paint.groove = MixColor(base, 0xFF000000, 0.30f);
+    // Cream inserts are the casino standard. Pale chips need dark inserts to
+    // keep the edge pattern readable.
+    paint.spot = pale ? MixColor(base, 0xFF000000, 0.50f) : 0xFFF2E9D6;
+    paint.inlay = 0xFFF6EEDC;
+    return paint;
+}
+
+static void FillChipDisc(float cx, float cy, float radius, float holeR,
+                         UINT32 color, float multiply)
+{
+    if (holeR > 0.0f)
+        FillDonut(cx, cy, radius, holeR, color, multiply);
+    else
+        FillEllipse(cx, cy, radius, radius, color, multiply);
+}
+
+// Builds every edge insert for one chip into a single geometry. The inserts
+// are wide radial blocks inlaid into the rim, not thin painted ticks. The
+// pattern is rotated half a step so the top of the rim and the upper-right
+// close affordance both fall in bare clay.
+static void FillChipEdgeSpots(float cx, float cy, float outerR, float innerR,
+                              int count, float halfAngle, UINT32 color,
+                              float multiply)
+{
+    if (!g_d2dFactory || !g_d2dTarget || !g_d2dBrush || count <= 0 ||
+        outerR <= innerR)
+        return;
+
+    ID2D1PathGeometry* geometry = nullptr;
+    if (FAILED(g_d2dFactory->CreatePathGeometry(&geometry)) || !geometry)
+        return;
+
+    ID2D1GeometrySink* sink = nullptr;
+    if (FAILED(geometry->Open(&sink)) || !sink)
+    {
+        geometry->Release();
+        return;
+    }
+
+    sink->SetFillMode(D2D1_FILL_MODE_WINDING);
+    const float step = 6.2831853f / static_cast<float>(count);
+    const float start = step * 0.5f - 1.5707963f;
+    for (int i = 0; i < count; i++)
+    {
+        const float angle = start + step * static_cast<float>(i);
+        const float a0 = angle - halfAngle;
+        const float a1 = angle + halfAngle;
+        const D2D1_POINT_2F outer0 = D2D1::Point2F(
+            cx + std::cos(a0) * outerR, cy + std::sin(a0) * outerR);
+        const D2D1_POINT_2F outer1 = D2D1::Point2F(
+            cx + std::cos(a1) * outerR, cy + std::sin(a1) * outerR);
+        const D2D1_POINT_2F inner1 = D2D1::Point2F(
+            cx + std::cos(a1) * innerR, cy + std::sin(a1) * innerR);
+        const D2D1_POINT_2F inner0 = D2D1::Point2F(
+            cx + std::cos(a0) * innerR, cy + std::sin(a0) * innerR);
+
+        sink->BeginFigure(outer0, D2D1_FIGURE_BEGIN_FILLED);
+        sink->AddLine(outer1);
+        sink->AddLine(inner1);
+        sink->AddLine(inner0);
+        sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    }
+    sink->Close();
+    sink->Release();
+
+    g_d2dBrush->SetColor(ColorOf(color, multiply));
+    g_d2dTarget->FillGeometry(geometry, g_d2dBrush);
+    geometry->Release();
+}
+
+// A soft top-light over the clay: the upper half catches the light while the
+// lower half rolls into shade. In mask mode the sheen is painted as a donut so
+// the live preview hole stays fully transparent.
+static void FillChipSheen(float cx, float cy, float outerR, float holeR,
+                          float alpha)
+{
+    if (!g_d2dTarget || alpha <= 0.0f)
+        return;
+
+    D2D1_GRADIENT_STOP stops[] = {
+        {0.00f, ColorOf(0xFFFFFFFF, 0.15f * alpha)},
+        {0.34f, ColorOf(0xFFFFFFFF, 0.05f * alpha)},
+        {0.52f, ColorOf(0xFF000000, 0.00f)},
+        {1.00f, ColorOf(0xFF000000, 0.16f * alpha)},
+    };
+    ID2D1GradientStopCollection* collection = nullptr;
+    if (FAILED(g_d2dTarget->CreateGradientStopCollection(
+            stops, ARRAYSIZE(stops), D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP,
+            &collection)) ||
+        !collection)
+        return;
+
+    ID2D1LinearGradientBrush* brush = nullptr;
+    if (SUCCEEDED(g_d2dTarget->CreateLinearGradientBrush(
+            D2D1::LinearGradientBrushProperties(
+                D2D1::Point2F(cx, cy - outerR),
+                D2D1::Point2F(cx, cy + outerR)),
+            collection, &brush)) &&
+        brush)
+    {
+        if (holeR > 0.0f)
+        {
+            ID2D1PathGeometry* geometry =
+                CreateDonutGeometry(cx, cy, outerR, holeR);
+            if (geometry)
+            {
+                g_d2dTarget->FillGeometry(geometry, brush);
+                geometry->Release();
+            }
+        }
+        else
+        {
+            const D2D1_ELLIPSE ellipse =
+                D2D1::Ellipse(D2D1::Point2F(cx, cy), outerR, outerR);
+            g_d2dTarget->FillEllipse(&ellipse, brush);
+        }
+        brush->Release();
+    }
+    collection->Release();
+}
+
+// Paints the clay body shared by desktop chips, window chips and the create
+// chip: a thin moulded edge, inset edge spots, the pressed rim groove and a
+// soft sheen. `holeR` keeps the centre transparent for the window preview.
+static void DrawChipBody(float cx, float cy, float r, UINT32 base, float holeR,
+                         float alpha, int spotCount = 8)
+{
+    const float s = g_scale;
+    const ChipPaint paint = ChipPaintFor(base);
+
+    const float edge = std::max(1.0f, 1.0f * s);
+    FillChipDisc(cx, cy, r, holeR, paint.edge, alpha);
+    FillChipDisc(cx, cy, r - edge, holeR, paint.face, alpha);
+
+    // Inserts stop at the pressed groove, a little over three quarters out.
+    const float spotInner = r * 0.78f;
+    FillChipEdgeSpots(cx, cy, r - edge * 0.5f, spotInner, spotCount, 0.23f,
+                      paint.spot, 0.95f * alpha);
+    StrokeEllipse(cx, cy, spotInner, spotInner, paint.groove, 1.0f * s,
+                  0.55f * alpha);
+    StrokeEllipse(cx, cy, spotInner - 1.2f * s, spotInner - 1.2f * s,
+                  0xFFFFFFFF, 0.7f * s, 0.10f * alpha);
+
+    FillChipSheen(cx, cy, r, holeR, alpha);
 }
 
 // A desktop rendered as a playing card: rank in the corners, suit pip, and the
@@ -3772,10 +3953,6 @@ static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
     }
     g_d2dTarget->SetTransform(saved);
 
-    FillEllipse(cx, cy, 18.0f * s, 18.0f * s,
-                MixColor(back, 0xFFFFFFFF, 0.08f), 1.0f);
-    StrokeEllipse(cx, cy, 18.0f * s, 18.0f * s, gold, 1.2f * s, 0.80f);
-
     const RectF label = {card.l + 18.0f * s, card.b - 36.0f * s,
                          card.r - 18.0f * s, card.b - 12.0f * s};
     FillRound(label, 7.0f * s, MixColor(back, 0xFF000000, 0.22f), 0.90f);
@@ -3787,7 +3964,7 @@ static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
 static void ClearCardAnimation()
 {
     g_cardAnim = CardAnimation();
-    g_pendingDrawCard = false;
+    g_createAfterDraw = false;
 }
 
 static void KickCardAnimation()
@@ -3799,45 +3976,64 @@ static void KickCardAnimation()
     InvalidateRect(g_overlay, nullptr, FALSE);
 }
 
-// Picks a card-sized target rectangle for the newly created desktop. Called
-// after UpdateLayout, so the new pill already exists and can be used as the
-// landing spot for the drawn card.
-static void StartDesktopCardDraw(int desktop)
+// Picks the card-sized slot where the new desktop will appear. The desktop does
+// not exist yet, so this is derived from the current layout: the slot before the
+// create card in the flat row, or the centred card in the carousel.
+static RectF FutureDesktopCardRect()
 {
-    const GUID noDesktop = {};
-    if (!g_cardAnimations || !UsesCards() || desktop < 0 ||
-        desktop >= static_cast<int>(g_desktops.size()) ||
-        IsEqualGUID(g_desktops[desktop].id, noDesktop))
-        return;
-
-    // Fallback landing spot: the centre of the strip, card-sized. The carousel
-    // can move the target tab during the flight, so DrawCardAnimation keeps
-    // following the real pill; this is only used if the pill is not visible yet.
-    const float fallbackW = g_createRect.W() > 0.0f ? g_createRect.W() : 120.0f * g_scale;
-    const float fallbackH = g_createRect.H() > 0.0f ? g_createRect.H() : 160.0f * g_scale;
-    const float fallbackCx = (g_layout.strip.l + g_layout.strip.r) / 2.0f;
-    const float fallbackCy = (g_layout.strip.t + g_layout.strip.b) / 2.0f;
-    RectF to = {fallbackCx - fallbackW / 2.0f, fallbackCy - fallbackH / 2.0f,
-                fallbackCx + fallbackW / 2.0f, fallbackCy + fallbackH / 2.0f};
-    for (const PillView& pill : g_pills)
+    const float s = g_scale;
+    const bool validCreate = g_createRect.W() > 0.0f && g_createRect.H() > 0.0f;
+    if (validCreate && IsWheel())
     {
-        if (pill.desktop == desktop && pill.visible)
+        for (const PillView& pill : g_pills)
         {
-            to = pill.rect;
-            to.t -= pill.lift;
-            to.b -= pill.lift;
-            break;
+            if (pill.visible && pill.desktop == g_currentDesktop)
+            {
+                const float cx =
+                    (g_layout.strip.l + g_layout.strip.r) / 2.0f;
+                const float w = pill.rect.W();
+                const float top = pill.rect.t - pill.lift;
+                const float bottom = pill.rect.b - pill.lift;
+                return {cx - w / 2.0f, top, cx + w / 2.0f, bottom};
+            }
         }
     }
+    else if (validCreate && !g_pills.empty())
+    {
+        // Adding a desktop recentres the flat row, which puts the new last card
+        // almost exactly at the create card's left edge, less half a gap.
+        const float gap =
+            std::max(0.0f, g_createRect.l - g_pills.back().rect.r);
+        const float w = g_pills.back().rect.W();
+        const float h = g_pills.back().rect.H();
+        const float cx = g_createRect.l - gap / 2.0f;
+        const float cy = (g_createRect.t + g_createRect.b) / 2.0f;
+        return {cx - w / 2.0f, cy - h / 2.0f, cx + w / 2.0f, cy + h / 2.0f};
+    }
+
+    // Fallback: a card-sized rectangle centred on the strip.
+    const float cardW = 160.0f * g_cardScale * s;
+    const float cardH = 224.0f * g_cardScale * s;
+    const float cx = (g_layout.strip.l + g_layout.strip.r) / 2.0f;
+    const float cy = (g_layout.strip.t + g_layout.strip.b) / 2.0f;
+    return {cx - cardW / 2.0f, cy - cardH / 2.0f,
+            cx + cardW / 2.0f, cy + cardH / 2.0f};
+}
+
+// Draws a card from the create deck before the shell creates the desktop. The
+// frame timer sends Win+Ctrl+D when the ghost reaches its landing slot.
+static void StartDesktopCreateDraw()
+{
+    if (!g_cardAnimations || !UsesCards() || !g_overlay)
+        return;
 
     CardAnimation anim;
     anim.mode = CardAnimationMode::Draw;
-    anim.desktopId = g_desktops[desktop].id;
-    anim.number = desktop + 1;
-    anim.suit = desktop & 3;
-    anim.name = g_desktops[desktop].name;
+    anim.number = static_cast<int>(g_desktops.size()) + 1;
+    anim.suit = static_cast<int>(g_desktops.size()) & 3;
+    anim.name = L"Desktop " + std::to_wstring(g_desktops.size() + 1);
     anim.from = g_createRect;
-    anim.to = to;
+    anim.to = FutureDesktopCardRect();
     anim.fromScale = 0.88f;
     anim.toScale = 1.0f;
     anim.fromAngle = -8.0f;
@@ -3845,11 +4041,28 @@ static void StartDesktopCardDraw(int desktop)
     anim.start = GetTickCount64();
     anim.duration = AnimationSeconds(0.52f);
     g_cardAnim = anim;
+    g_createAfterDraw = true;
     KickCardAnimation();
 }
 
-// Carries a closing desktop card off the right edge. The caller invokes this
-// before the desktop action, while the desktop and its pill still exist.
+static void FinishDesktopCreateAfterDraw()
+{
+    if (!g_createAfterDraw)
+        return;
+
+    g_createAfterDraw = false;
+    ClearCardAnimation();
+    SendChord('D', false);
+    if (g_overlay)
+    {
+        SetTimer(g_overlay, kTimerDesktop, 700, nullptr);
+        InvalidateRect(g_overlay, nullptr, FALSE);
+    }
+    KickCarousel();
+}
+
+// Tosses a closing desktop card up and off the right edge. The caller invokes
+// this before the desktop action, while the desktop and its pill still exist.
 static void StartDesktopCardThrow(int desktop)
 {
     const GUID noDesktop = {};
@@ -3878,16 +4091,15 @@ static void StartDesktopCardThrow(int desktop)
     anim.name = g_desktops[desktop].name;
     anim.from = from;
     const float dx = g_layout.w - from.l + 80.0f * g_scale;
-    anim.to = {from.l + dx, from.t + 120.0f * g_scale,
-               from.r + dx, from.b + 120.0f * g_scale};
+    anim.to = {from.l + dx, from.t - 180.0f * g_scale,
+               from.r + dx, from.b - 180.0f * g_scale};
     anim.fromScale = 1.0f;
-    anim.toScale = 0.78f;
+    anim.toScale = 0.72f;
     anim.fromAngle = 0.0f;
-    anim.toAngle = 30.0f;
+    anim.toAngle = 75.0f;
     anim.start = GetTickCount64();
     anim.duration = AnimationSeconds(0.42f);
     g_cardAnim = anim;
-    g_pendingDrawCard = false;
     KickCardAnimation();
 }
 
@@ -3958,9 +4170,10 @@ static void DrawGhostCardFace(const RectF& face, int number, int suit,
     }
 }
 
-// While a draw or throw ghost is in flight, the real desktop tab is hidden so
-// the card does not appear twice. The check uses the elapsed time rather than
-// just the mode, so the tab reappears on the same frame the ghost lands.
+// While a throw ghost is in flight, the real desktop tab is hidden so the card
+// does not appear twice. A pre-create draw has no tab yet, so its zero GUID
+// never matches. The check uses the elapsed time rather than just the mode, so
+// the tab reappears on the same frame the ghost leaves.
 static bool CardAnimationHidesDesktop(int desktop)
 {
     const GUID noDesktop = {};
@@ -3980,32 +4193,15 @@ static void DrawCardAnimation()
     if (g_cardAnim.mode == CardAnimationMode::None)
         return;
 
-    // The carousel keeps turning while the drawn card is in flight. Follow the
-    // landing tab so the card arrives at its final position instead of a stale
-    // one captured on the first frame after the desktop appeared.
-    if (g_cardAnim.mode == CardAnimationMode::Draw)
-    {
-        for (const PillView& pill : g_pills)
-        {
-            if (pill.desktop < 0 ||
-                pill.desktop >= static_cast<int>(g_desktops.size()))
-                continue;
-            if (!IsEqualGUID(g_desktops[pill.desktop].id,
-                             g_cardAnim.desktopId))
-                continue;
-            g_cardAnim.to = pill.rect;
-            g_cardAnim.to.t -= pill.lift;
-            g_cardAnim.to.b -= pill.lift;
-            break;
-        }
-    }
-
     const float duration = std::max(0.05f, g_cardAnim.duration);
     const float elapsed =
         static_cast<float>(GetTickCount64() - g_cardAnim.start) / 1000.0f;
     if (elapsed >= duration)
     {
-        ClearCardAnimation();
+        // A pre-create draw is completed by the frame timer, which sends the
+        // create chord; leave the ghost at its landing slot until then.
+        if (!g_createAfterDraw)
+            ClearCardAnimation();
         return;
     }
 
@@ -4026,9 +4222,14 @@ static void DrawCardAnimation()
     }
     else
     {
-        const float drop = arc * 10.0f * g_scale;
-        rect.t += drop;
-        rect.b += drop;
+        // A throw arcs upward while it drifts to the right, like a card being
+        // tossed away, instead of dropping below the strip.
+        const float lift = arc * 30.0f * g_scale;
+        const float drift = arc * 10.0f * g_scale;
+        rect.t -= lift;
+        rect.b -= lift;
+        rect.l += drift;
+        rect.r += drift;
     }
 
     const float scale = g_cardAnim.fromScale +
@@ -4081,48 +4282,38 @@ static void DrawChipTab(const PillView& pill, bool active, bool hovered,
                   0.30f * alpha + (pill.lift > 0.0f ? 0.08f : 0.0f));
     }
 
-    const RectF outer = {cx - r, cy - r, cx + r, cy + r};
-    FillRound(outer, r, chipColor, alpha);
-    const float innerR = r * 0.78f;
-    const RectF inner = {cx - innerR, cy - innerR, cx + innerR, cy + innerR};
-    FillRound(inner, innerR, MixColor(chipColor, 0xFFFFFFFF, 0.10f), alpha);
+    DrawChipBody(cx, cy, r, chipColor, 0.0f, alpha);
 
-    // Casino edge spots around the rim.
-    D2D1::Matrix3x2F saved;
-    g_d2dTarget->GetTransform(&saved);
-    for (int k = 0; k < 8; k++)
-    {
-        g_d2dTarget->SetTransform(
-            D2D1::Matrix3x2F::Rotation(static_cast<float>(k) * 45.0f,
-                                      D2D1::Point2F(cx, cy)) *
-            saved);
-        const RectF dash = {cx - 2.2f * s, cy - r, cx + 2.2f * s,
-                            cy - r + 7.0f * s};
-        FillRound(dash, 2.0f * s, 0xFFFFFFFF, 0.82f * alpha);
-    }
-    g_d2dTarget->SetTransform(saved);
+    // Cream inlay for the desktop number, framed by a pressed ring and a ring
+    // of tiny moulded marks, like the centre of a real casino chip.
+    const ChipPaint paint = ChipPaintFor(chipColor);
+    const float discR = r * 0.58f;
+    FillEllipse(cx, cy, discR + 1.6f * s, discR + 1.6f * s, paint.edge,
+                0.55f * alpha);
+    FillEllipse(cx, cy, discR, discR, paint.inlay, alpha);
+    StrokeEllipse(cx, cy, discR * 0.86f, discR * 0.86f,
+                  MixColor(paint.inlay, chipColor, 0.42f), 0.8f * s,
+                  0.55f * alpha);
+    FillChipEdgeSpots(cx, cy, r * 0.72f, r * 0.675f, 12, 0.055f, paint.spot,
+                      0.55f * alpha);
 
-    const float discR = r * 0.55f;
     const RectF disc = {cx - discR, cy - discR, cx + discR, cy + discR};
-    FillRound(disc, discR, 0xFFF8F5EC, alpha);
     DrawTextBlock(std::to_wstring(pill.desktop + 1), g_fmtPillLarge, disc,
                   ChipDiscInk(chipColor), DWRITE_TEXT_ALIGNMENT_CENTER, alpha);
 
     if (g_desktopSelection == DesktopSelection::Highlight && (selected || active))
     {
-        StrokeRound(outer, r, g_theme.accent, (selected ? 2.6f : 2.0f) * s,
-                    0.95f * alpha);
-        const RectF contrast = {cx - r + 2.0f * s, cy - r + 2.0f * s,
-                                cx + r - 2.0f * s, cy + r - 2.0f * s};
-        StrokeRound(contrast, std::max(2.0f * s, r - 2.0f * s),
-                    ChipTextColor(chipColor), 1.0f * s, 0.55f * alpha);
+        StrokeEllipse(cx, cy, r, r, g_theme.accent,
+                      (selected ? 2.6f : 2.0f) * s, 0.95f * alpha);
+        StrokeEllipse(cx, cy, r - 2.0f * s, r - 2.0f * s,
+                      ChipTextColor(chipColor), 1.0f * s, 0.55f * alpha);
     }
     else if (hovered)
-        StrokeRound(outer, r, ChipTextColor(chipColor), 1.5f * s,
-                    0.65f * alpha);
+        StrokeEllipse(cx, cy, r, r, ChipTextColor(chipColor), 1.5f * s,
+                      0.65f * alpha);
     else if (g_desktopSelection == DesktopSelection::Lift && (selected || active))
-        StrokeRound(outer, r, ChipTextColor(chipColor), 1.2f * s,
-                    0.28f * alpha);
+        StrokeEllipse(cx, cy, r, r, ChipTextColor(chipColor), 1.2f * s,
+                      0.28f * alpha);
 
     const bool renaming = g_renameDesktop == pill.desktop;
     const std::wstring& name =
@@ -4281,46 +4472,22 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
                     0xFF000000, 0.30f + (lift > 0.0f ? 0.08f : 0.0f));
     }
 
-    if (donut)
-    {
-        FillDonut(cx, cy, r, previewR, base, 1.0f);
-        FillDonut(cx, cy, r * 0.87f, previewR,
-                  MixColor(base, 0xFFFFFFFF, 0.07f), 1.0f);
-    }
-    else
-    {
-        FillEllipse(cx, cy, r, r, base, 1.0f);
-        FillEllipse(cx, cy, r * 0.87f, r * 0.87f,
-                    MixColor(base, 0xFFFFFFFF, 0.07f), 1.0f);
-    }
+    const ChipPaint paint = ChipPaintFor(base);
+    const float holeR = donut ? previewR : 0.0f;
+    DrawChipBody(cx, cy, r, base, holeR, 1.0f);
 
-    // Casino edge spots around the rim.
-    D2D1::Matrix3x2F saved;
-    g_d2dTarget->GetTransform(&saved);
-    for (int k = 0; k < 12; k++)
-    {
-        g_d2dTarget->SetTransform(
-            D2D1::Matrix3x2F::Rotation(static_cast<float>(k) * 30.0f,
-                                      D2D1::Point2F(cx, cy)) *
-            saved);
-        const RectF dash = {cx - 2.1f * s, cy - r + 2.0f * s, cx + 2.1f * s,
-                            cy - r + 8.0f * s};
-        FillRound(dash, 2.0f * s, 0xFFFFFFFF, 0.78f);
-    }
-    g_d2dTarget->SetTransform(saved);
-
-    const UINT32 innerColor = MixColor(base, 0xFF000000, 0.08f);
-    if (donut)
-        FillDonut(cx, cy, r * 0.73f, previewR, innerColor, 1.0f);
-    else
-        FillEllipse(cx, cy, r * 0.73f, r * 0.73f, innerColor, 1.0f);
-
+    // The centre inlay: on a real chip the live thumbnail (or the icon disc)
+    // sits inside a pressed ring, with a thin printed ring just outside it.
     if (!mask && g_windowChipContent == WindowChipContent::Preview)
     {
         FillEllipse(cx, cy, previewR, previewR, g_theme.previewFill, 1.0f);
-        StrokeEllipse(cx, cy, previewR, previewR, textColor, 1.0f * s, 0.22f);
     }
-    else if (!mask && g_windowChipContent == WindowChipContent::Icon)
+    StrokeEllipse(cx, cy, previewR + 0.8f * s, previewR + 0.8f * s,
+                  paint.groove, 1.2f * s, 0.75f);
+    StrokeEllipse(cx, cy, previewR + 2.4f * s, previewR + 2.4f * s,
+                  paint.inlay, 0.8f * s, 0.32f);
+
+    if (!mask && g_windowChipContent == WindowChipContent::Icon)
     {
         FillEllipse(cx, cy, r * 0.34f, r * 0.34f,
                     MixColor(base, 0xFFFFFFFF, 0.16f), 1.0f);
@@ -4338,13 +4505,16 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
     }
     // Blank content: the curved title is the only thing in the centre.
 
-    // Keep the curved title on the rim ring, clear of the larger circular
-    // preview so it never sits on top of the live thumbnail.
-    const float titleRadius = std::max(r * 0.76f, r - 22.0f * s);
+    // Keep the title in the clay band between the centre inlay and the edge
+    // inserts, where a real chip prints its text, instead of on top of the
+    // preview or the inlaid spots.
+    const float titleRadius = previewR + (r * 0.78f - previewR) * 0.5f;
     IDWriteTextFormat* titleFormat =
-        r >= 80.0f * s ? g_fmtPill : g_fmtHint;
+        r >= 130.0f * s ? g_fmtPillLarge
+        : r >= 80.0f * s ? g_fmtPill
+                         : g_fmtHint;
     DrawArcText(entry.title, titleFormat, cx, cy, titleRadius, textColor,
-                150.0f, 0.95f);
+                170.0f, 0.95f);
 
     const UINT32 heldColor = HeldColorOf(entry.hwnd);
     if (selected)
@@ -4618,30 +4788,6 @@ static void RenderScene(HDC dc)
     }
 
     UpdateLayout();
-
-    // A created desktop appears asynchronously. Start the draw animation on the
-    // first frame that can see the new desktop, so the card lands on its tab.
-    if (g_pendingDrawCard)
-    {
-        if (g_desktops.size() > g_pendingDrawFromCount)
-        {
-            // Creation appends a desktop at the end. If the shell has not
-            // reported the switch yet, land on the new last tab instead of the
-            // old current desktop.
-            int target = g_currentDesktop;
-            if (target < static_cast<int>(g_pendingDrawFromCount))
-                target = static_cast<int>(g_desktops.size()) - 1;
-            if (target >= 0 && target < static_cast<int>(g_desktops.size()))
-            {
-                g_pendingDrawCard = false;
-                StartDesktopCardDraw(target);
-            }
-        }
-        else if (GetTickCount64() - g_pendingDrawTick > 4000)
-        {
-            g_pendingDrawCard = false;
-        }
-    }
 
     // Opening / closing animation: fade plus a slight scale about the centre.
     const float presence = g_presence;
@@ -5019,15 +5165,44 @@ static void RenderScene(HDC dc)
     {
         DrawCreateCard(g_createRect, g_hoverCreate, g_createPull);
     }
+    else if (UsesChips())
+    {
+        const float r = g_createRect.W() / 2.0f;
+        const float cx = g_createRect.l + g_createRect.W() / 2.0f;
+        const float cy = g_createRect.t + g_createRect.H() / 2.0f;
+        if (!StripBackgroundVisible())
+        {
+            FillEllipse(cx, cy + 6.0f * s, r * 1.01f, r * 0.98f, 0xFF000000,
+                        0.30f);
+        }
+
+        const UINT32 base =
+            g_hoverCreate ? g_theme.pillActiveHover : g_theme.pillFill;
+        DrawChipBody(cx, cy, r, base, 0.0f, 1.0f);
+
+        const ChipPaint paint = ChipPaintFor(base);
+        const float discR = r * 0.58f;
+        FillEllipse(cx, cy, discR + 1.4f * s, discR + 1.4f * s, paint.edge,
+                    0.55f);
+        FillEllipse(cx, cy, discR, discR, paint.inlay, 1.0f);
+
+        g_d2dBrush->SetColor(ColorOf(ChipDiscInk(base), 0.92f));
+        const float arm = discR * 0.46f;
+        g_d2dTarget->DrawLine(D2D1::Point2F(cx - arm, cy),
+                              D2D1::Point2F(cx + arm, cy), g_d2dBrush,
+                              1.8f * s);
+        g_d2dTarget->DrawLine(D2D1::Point2F(cx, cy - arm),
+                              D2D1::Point2F(cx, cy + arm), g_d2dBrush,
+                              1.8f * s);
+    }
     else
     {
-        const float createR = UsesChips() ? g_createRect.W() / 2.0f : 10.0f * s;
+        const float createR = 10.0f * s;
         if (!StripBackgroundVisible())
         {
             const RectF shadow = {g_createRect.l, g_createRect.t + 5.0f * s,
                                   g_createRect.r, g_createRect.b + 9.0f * s};
-            FillRound(shadow, UsesChips() ? createR : 12.0f * s, 0xFF000000,
-                      0.30f);
+            FillRound(shadow, 12.0f * s, 0xFF000000, 0.30f);
         }
         FillRound(g_createRect, createR,
                   g_hoverCreate ? g_theme.pillActive : g_theme.pillFill, 1.0f);
@@ -5071,8 +5246,9 @@ static void RenderScene(HDC dc)
         DrawTextBlock(hint, g_fmtHint, hintRect, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_LEADING, 0.42f);
 
-    // Busy indicator (desktop switching).
-    if (g_busy)
+    // Busy indicator (desktop switching). Suppress it while the pre-create card
+    // is being drawn and while the overlay is fading out.
+    if (g_busy && !g_createAfterDraw && g_targetPresence > 0.0f)
     {
         const float pcx = g_layout.w / 2.0f;
         const float pcy = g_layout.h / 2.0f;
@@ -5662,6 +5838,9 @@ static void UpdateHover(int x, int y)
 
 static void OnLeftClick(int x, int y)
 {
+    if (g_createAfterDraw)
+        return;
+
     const float fx = static_cast<float>(x);
     const float fy = static_cast<float>(y);
 
@@ -5865,6 +6044,19 @@ static void MoveStripSelection(int delta)
 
 static void OnKeyDown(WPARAM key)
 {
+    // The pre-create card draw owns the keyboard briefly. Escape cancels it;
+    // every other key is ignored so the pending desktop is not lost mid-flight.
+    if (g_createAfterDraw)
+    {
+        if (key == VK_ESCAPE)
+        {
+            g_createAfterDraw = false;
+            ClearCardAnimation();
+            HideOverlay(false);
+        }
+        return;
+    }
+
     if (IsRenamingDesktop())
     {
         if (key == VK_RETURN)
@@ -6205,6 +6397,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 
     case WM_LBUTTONDOWN:
     {
+        if (g_createAfterDraw)
+            return 0;
         const int x = GET_X_LPARAM(lParam);
         const int y = GET_Y_LPARAM(lParam);
         if (UsesCards() &&
@@ -6262,6 +6456,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 
     case WM_LBUTTONUP:
     {
+        if (g_createAfterDraw)
+            return 0;
         const int x = GET_X_LPARAM(lParam);
         const int y = GET_Y_LPARAM(lParam);
         if (g_createDragging)
@@ -6285,6 +6481,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 
     case WM_RBUTTONUP:
     {
+        if (g_createAfterDraw)
+            return 0;
         const int x = GET_X_LPARAM(lParam);
         const int y = GET_Y_LPARAM(lParam);
         const int pillIndex = PillAt(static_cast<float>(x), static_cast<float>(y));
@@ -6304,6 +6502,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 
     case WM_MBUTTONUP:
     {
+        if (g_createAfterDraw)
+            return 0;
         const int x = GET_X_LPARAM(lParam);
         const int y = GET_Y_LPARAM(lParam);
         for (const CardView& card : g_cards)
@@ -6329,6 +6529,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 
     case WM_MOUSEWHEEL:
     {
+        if (g_createAfterDraw)
+            return 0;
         const int delta = GET_WHEEL_DELTA_WPARAM(wParam);
         if (delta < 0)
             g_page = std::min(g_layout.pageCount - 1, g_page + 1);
@@ -6373,6 +6575,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 
     case WM_CHAR:
     {
+        if (g_createAfterDraw)
+            return 0;
         const WCHAR ch = static_cast<WCHAR>(wParam);
         if (ch < 32 || ch == 127)
             return 0;
@@ -6491,15 +6695,24 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 return 0;
             }
 
-            if (g_cardAnim.mode != CardAnimationMode::None &&
-                now - g_cardAnim.start >=
-                    static_cast<ULONGLONG>(g_cardAnim.duration * 1000.0f))
+            if (g_createAfterDraw)
+            {
+                const bool landed =
+                    g_cardAnim.mode == CardAnimationMode::None ||
+                    now - g_cardAnim.start >=
+                        static_cast<ULONGLONG>(g_cardAnim.duration * 1000.0f);
+                if (landed)
+                    FinishDesktopCreateAfterDraw();
+            }
+            else if (g_cardAnim.mode != CardAnimationMode::None &&
+                     now - g_cardAnim.start >=
+                         static_cast<ULONGLONG>(g_cardAnim.duration * 1000.0f))
+            {
                 ClearCardAnimation();
-            if (g_pendingDrawCard && now - g_pendingDrawTick > 4000)
-                g_pendingDrawCard = false;
+            }
 
-            if (g_presence >= 1.0f && !g_busy &&
-                g_cardAnim.mode == CardAnimationMode::None && !g_pendingDrawCard)
+            if (g_presence >= 1.0f && !g_busy && !g_createAfterDraw &&
+                g_cardAnim.mode == CardAnimationMode::None)
                 KillTimer(hwnd, kTimerFrame);
 
             InvalidateRect(hwnd, nullptr, FALSE);
@@ -6626,6 +6839,9 @@ static LRESULT CALLBACK ControlWndProc(HWND hwnd, UINT message, WPARAM wParam,
     if (g_hotkeyMessage != 0 && message == g_hotkeyMessage &&
         wParam == kHotkeyFlagWinTab)
     {
+        // Ignore the toggle while the pre-create card is still in flight.
+        if (g_createAfterDraw)
+            return 0;
         // Ignore auto-repeat / rapid toggles while a held Win+Tab repeats.
         const ULONGLONG now = GetTickCount64();
         if (!g_visible || now - g_shownAtTick > 280)
@@ -6833,7 +7049,16 @@ static DWORD WINAPI UiThreadProc(LPVOID)
                 if (g_overlay && GetCapture() == g_overlay)
                     ReleaseCapture();
                 if (!g_cardAnimations || !UsesCards())
+                {
+                    const bool hadPendingCreate = g_createAfterDraw;
                     ClearCardAnimation();
+                    if (hadPendingCreate)
+                    {
+                        g_busy = false;
+                        g_pendingDesktopTarget = -1;
+                        g_pendingDesktopTries = 0;
+                    }
+                }
                 // The accent blur only takes effect while the overlay is hidden
                 // (see ApplyBackdrop), so re-applying it to a visible overlay
                 // would leave the flat fill behind it. It is applied on the next

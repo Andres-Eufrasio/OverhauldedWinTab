@@ -104,10 +104,12 @@ are hidden while the overlay is busy or closing. `WindowChipContent` can replace
 the thumbnail with a large application icon or with no center content at all.
 The title is drawn one character at a time along the top arc by `DrawArcText()`:
 each character is measured with `MeasureTextWidth()`, positioned on the arc, and
-rotated by `DrawRotatedTextBlock()`. The title radius keeps the text on the rim
-ring, outside the circular preview. The chip itself is drawn with an outer disc,
-a lighter inner ring, twelve white edge spots, a darker center disc, and a
-contrast-aware title color from `ChipTextColor()`.
+rotated by `DrawRotatedTextBlock()`. The title radius places the text in the clay
+band between the centre inlay and the edge inserts. `DrawChipBody()` paints the
+chip: a moulded outer edge, eight wide inlaid edge spots, the pressed groove and
+a vertical light-to-dark sheen, with an optional transparent hole for the live
+preview. The centre inlay gets its own pressed ring and a subtle printed ring,
+and the title uses a contrast-aware color from `ChipTextColor()`.
 
 `Appearance.WindowChipSize` scales `maxCardW` and the dock width, so the grid,
 the dock and the circular preview all grow together. The internal
@@ -299,11 +301,12 @@ truth for the tab shape. `UsesChips()` and `UsesCards()` resolve the tab style, 
 `IsWheel()` marks the carousel layout. In carousel mode every tab is placed by
 its wrapped distance `d` from `g_carouselPos`, with `scale = 1 - 0.18|d|`, a
 `4.5d` degree tilt, a small vertical arc and an alpha fade. `DrawChipTab` paints
-a poker chip: a coloured rim with eight white edge spots, the desktop number on a
-cream centre disc, the desktop name on a label below, and the close button on the
-rim. Pill tabs keep their 42 px flat-row and 52 px carousel heights. Chips are
-52 px in the flat row and 64 px in the carousel, with the name on a label
-underneath (15 px and 17 px respectively).
+a poker chip: a clay body with eight wide inlaid edge spots, a pressed rim groove,
+the desktop number on a cream centre inlay, a ring of small pressed marks, the
+desktop name on a label below, and the close button on the rim. Pill tabs keep
+their 42 px flat-row and 52 px carousel heights. Chips are 52 px in the flat row
+and 64 px in the carousel, with the name on a label underneath (15 px and 17 px
+respectively).
 
 Playing cards are a tab style, so they work in both layouts. `RebuildPills`
 uses a fixed 160 x 224 card multiplied by `Appearance.CardSize`
@@ -319,13 +322,15 @@ create action as a click. `DrawDesktopCard` paints the ivory face,
 corner rank and suit (rotated 180 degrees in the bottom corner), a large suit
 pip, and the desktop name; the suit is `desktop & 3`, so desktops cycle through
 spades, hearts, diamonds and clubs. `Appearance.CardAnimations` adds two ghost
-cards drawn by `DrawCardAnimation()`: creating a desktop starts a draw from the
-create deck to the new tab once the desktop appears, and closing one starts a
-throw from the current tab off the right edge. The ghost stores its own rank,
-suit and name so it can outlive the desktop it represents. A draw follows the
-new tab while the carousel turns, so the card lands on the tab's final position;
-the real tab is hidden until the ghost lands. Both animations use
-`AnimationSeconds()`, so `Appearance.AnimationSpeed` controls them.
+cards drawn by `DrawCardAnimation()`: creating a desktop pulls a card from the
+create deck to the slot where the new tab will appear and only then sends
+Win+Ctrl+D, while closing one tosses the card up and off the right edge. The
+ghost stores its own rank, suit and name so it can outlive the desktop it
+represents. The draw target is computed before creation from the current layout
+(just left of the create card in the flat row, centred in the carousel), so no
+real tab needs to be hidden. A throw hides the closing tab until the ghost
+leaves. Both animations use `AnimationSeconds()`, so
+`Appearance.AnimationSpeed` controls them.
 `Appearance.StripBackground` controls the panel: `Auto` keeps it in the flat row
 and hides it for the carousel, `StripBackgroundVisible()` resolves the three
 modes, and floating tabs get a soft drop shadow. `kTimerCarousel` eases
@@ -342,11 +347,12 @@ thumbnail, a large app icon or a name-only center. The circular thumbnail path
 uses `g_thumbHost` / `g_chipMask`; thumbnails are skipped when the chip content is
 icon or blank, because the center does not show a preview. `DrawWindowChip()`
 takes a `mask` flag: in mask mode it skips the shadow and preview fill, draws the
-chip surface as donuts with a transparent hole at `card.preview`, and still
-paints the title, selection ring, held dot and close affordance. The mask scene is
-rendered after the overlay scene into `g_maskDC`, then presented with
-`UpdateLayeredWindow()`. `DrawArcText()` lays the title on the top rim and trims
-it with an ellipsis when it exceeds the 150-degree arc. Hover and close rectangles
+chip surface (including the clay sheen) as donuts with a transparent hole at
+`card.preview`, and still paints the title, selection ring, held dot and close
+affordance. The mask scene is rendered after the overlay scene into `g_maskDC`,
+then presented with `UpdateLayeredWindow()`. `DrawArcText()` lays the title in the
+band between the centre inlay and the edge inserts and trims it with an ellipsis
+when it exceeds the 170-degree arc. Hover and close rectangles
 are tracked separately for the grid (`g_hoverCard` / `g_hoverClose`) and the dock
 (`g_hoverDock` / `g_hoverDockClose`), and `OnLeftClick()` uses the stable
 `CardView::entry` for dock activation and closing.

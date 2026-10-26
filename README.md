@@ -28,8 +28,8 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Held windows can move into a left or right side dock, with full keyboard
   access and an optional floating (background-free) dock
 - Optional lift on window hover and keyboard selection
-- Animated playing cards: draw one from the deck when creating a desktop and
-  throw one away when closing it
+- Animated playing cards: draw one from the deck before creating a desktop and
+  toss one away when closing it
 - Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
@@ -116,7 +116,7 @@ movement keys.
 | Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
-| Window tabs | Square previews, or poker chips with the window title curved around the top rim |
+| Window tabs | Square previews, or poker chips with the window title curved around the centre inlay |
 | Window chip content | Live window preview, app icon, or name only |
 | Window chip size | Small, medium, large or extra-large poker-chip window tabs |
 | Chip colors | Theme accent shades, a single color, a custom palette, or classic casino colors |
@@ -190,9 +190,10 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 **Desktop tabs** chooses the tab shape for both layouts:
 
 - **Pills** (default) – the wide rounded tabs with the desktop number and name.
-- **Poker chips** – each desktop becomes a numbered casino chip with a coloured
-  rim, white edge spots and the desktop name on a label underneath. The create
-  button becomes a round chip too. The rim colors follow **Chip colors**: by
+- **Poker chips** – each desktop becomes a numbered casino chip: a clay-coloured
+  body with pressed cream edge inserts, a recessed ring and the desktop number on
+  a cream centre inlay, with the desktop name on a label underneath. The create
+  button becomes a matching chip. The chip colors follow **Chip colors**: by
   default they are shades derived from the theme accent, so the chips change with
   the palette. Choose **Classic casino colors** for the original fixed set, or
   define a single color or your own palette.
@@ -203,9 +204,10 @@ still controls how strongly the panel tint covers the backdrop in every theme.
   create button is a face-down card: click it, or pull it downward, to create a
   new desktop.
 
-With **Card animations** on, creating a desktop draws a card from the deck onto
-the new desktop tab, and closing one throws its card off the strip. The card
-animations use the same **Animation speed** as the open and close transitions.
+With **Card animations** on, creating a desktop first draws a card from the deck
+toward the new desktop's place in the strip, then creates the desktop; closing
+one tosses its card up and off the strip. The card animations use the same
+**Animation speed** as the open and close transitions.
 
 **Desktop selection** changes how the active and selected desktop tabs are
 marked. **Accent outline** (default) keeps the current accent border. **Lift**
@@ -225,13 +227,13 @@ instead of stopping at the edge.
 ## Window chips
 
 **Window tabs** can draw each open window as a square preview or as a
-poker chip. The window title is curved around the top rim, one character at a
-time, and the centre can show:
+poker chip. The window title is curved around the top of the centre inlay, one
+character at a time, and the centre can show:
 
 - **Live window preview** (default) – the real DWM thumbnail, clipped to a
-  circle inside the chip.
+  circle inside the chip and framed by a pressed ring.
 - **App icon** – the application icon on a light centre disc.
-- **Name only** – just the curved title and the coloured chip surface.
+- **Name only** – just the curved title and the coloured clay surface.
 
 **Window chip size** makes the chips small, medium, large or extra-large; the
 grid and the held dock both scale with it. The circular preview is a real DWM
