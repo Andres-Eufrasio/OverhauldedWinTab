@@ -24,13 +24,13 @@ Guiding rules:
 
 ## Implemented on `experimental-card`
 
-- `Appearance.DesktopStrip` gains a third `cards` option, so the original
-  carousel remains available next to the playing-card wheel (v0.6.0).
+- `Appearance.DesktopStrip` (`flat` / `carousel`) originally gained a third
+  `cards` option for the playing-card wheel (v0.6.0). The option was removed in
+  v0.8.0 when `Appearance.StripTabs` became the single source of truth.
 - `Appearance.StripTabs` (`pill` / `chip`) renders flat-row and carousel tabs as
   poker chips with a numbered centre disc and a name label (v0.6.0).
 - `Appearance.StripTabs` gains `cards`, so playing cards are a tab style and work
-  in both the flat row and the carousel; the old `DesktopStrip=cards` value is
-  still accepted as a legacy alias (v0.7.0).
+  in both the flat row and the carousel (v0.7.0).
 - `Appearance.CardSize` (`small` / `medium` / `large`) scales the playing cards
   and the strip height (v0.7.0).
 - The playing-card create button is a face-down card; click it or pull it down
@@ -52,11 +52,29 @@ Guiding rules:
 - `Appearance.LiftHeldWindows`, `LiftHoveredWindows` and `LiftSelectedWindow`
   add the lifted, picked-up appearance to window cards and chips (v0.8.0).
 - The playing-card create button is now a vector card back with a double frame,
-  lattice, medallion and ornament ring (v0.8.0).
+  lattice, medallion and ornament ring. The old centered plus was removed so the
+  face-down card reads as a card back rather than an add button (v0.8.0).
+- `Appearance.WindowChipSize` (`small` / `medium` / `large` / `extra-large`)
+  scales poker-chip window tabs and the held dock (v0.8.0).
+- Window-chip previews are circular. A top-level DWM thumbnail host plus a
+  layered chip mask clip the live thumbnail to the chip instead of showing a
+  square inside a round frame (v0.8.0).
+- `Appearance.HeldDockBackground` can hide the dock panel so the dock floats
+  over the desktop (v0.8.0).
+- The held dock is a keyboard stage: `Tab` cycles grid -> dock -> strip -> grid,
+  arrows and Vim keys select, `Enter` activates, `Delete` closes and `U`
+  releases (v0.8.0).
+- `Appearance.CardAnimations` draws a card from the deck when creating a desktop
+  and throws the card away when closing one. Both animations use
+  `Appearance.AnimationSpeed` (v0.8.0).
+- The window-tab `cards` value is labelled **Squares** in the UI because those
+  tabs are square previews, not playing cards. The internal value stays `cards`
+  for settings compatibility (v0.8.0).
 
 The only deliberate default changes in v0.8.0 are the chip colors (theme shades;
-select **Classic casino colors** to keep the old fixed palette) and the lifted
-held-window look. Every other new setting is opt-in.
+select **Classic casino colors** to keep the old fixed palette), the lifted
+held-window look, and card animations being on. Every other new setting is
+opt-in.
 
 ## Phase 1 - Visual customization pack
 

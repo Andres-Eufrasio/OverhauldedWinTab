@@ -36,11 +36,15 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
 - Search across window titles and applications (press `/` to start typing)
-- Optional poker-chip window tabs with a live preview, app icon or name-only centre
+- Optional poker-chip window tabs with a circular live preview, app icon or
+  name-only centre, in four sizes
 - Optional playing-card, poker-chip and carousel desktop tabs
 - Accent-outline or pick-up/lift selection for every desktop tab style
-- Held windows can move into a left or right side dock and look slightly lifted
+- Held windows can move into a left or right side dock, with full keyboard
+  access and an optional floating (background-free) dock
 - Optional lift on window hover and keyboard selection
+- Animated playing cards: draw one from the deck when creating a desktop and
+  throw one away when closing it
 - Optional search bar and shortcut hints, for a cleaner overview
 - Virtual desktop strip with switching, creating and closing; clicking a desktop
   jumps straight to it instead of stepping through the ones in between
@@ -71,37 +75,37 @@ The overview is a persistent window prepared in the background, so `Win` + `Tab`
 opens immediately instead of building the interface from scratch every time.
 
 The playing-card create button is a real vector card back rather than a flat
-placeholder: a double gold frame, a fine diagonal lattice with diamond pips, an
-oval medallion with a ring of ornaments, and a centered plus. It is drawn
-entirely with Direct2D primitives, so it stays crisp at every DPI and card size.
+placeholder: a double gold frame, a fine diagonal lattice with diamond pips, and
+an oval medallion with a ring of ornaments. It is drawn entirely with Direct2D
+primitives, so it stays crisp at every DPI and card size.
 
 ## Controls
 
 | Input | Action |
 | ----- | ------ |
 | `Win` + `Tab` | Open or close the overview |
-| `Esc` | Close the overview (or clear the search / cancel a rename) |
-| `Enter` | Switch to the selected window / desktop, or save a rename |
-| `Delete` | Close the selected window / desktop |
-| `Arrows` | Move through the window grid |
-| `Tab` | Toggle between the grid and the desktop strip |
+| `Enter` | Switch to the selected window / dock item / desktop, or save a rename |
+| `Delete` | Close the selected window or dock item, or the active desktop |
+| `Arrows` | Move through the focused grid, held dock or desktop strip |
+| `Tab` | Cycle grid → held dock (when present) → desktop strip → grid |
+| `Esc` | Leave the held dock, clear the search, or close the overview |
 | `Ctrl` + `Left` / `Right` | Switch to the previous / next virtual desktop |
-| `Shift` + `Left` / `Right` | Move the selected window to the previous / next desktop |
-| `M` then `1`-`9` | Move the selected window to that numbered desktop |
+| `Shift` + `Left` / `Right` | Move the selected window or dock item to the previous / next desktop |
+| `M` then `1`-`9` | Move the selected window or dock item to that numbered desktop |
 | `1`-`9` | Jump to that numbered virtual desktop |
-| `Shift` + `1`-`9` | Move the selected window to that numbered desktop |
-| `U` | Hold or release the selected window, or the held dock item under the pointer; held windows follow you across desktops |
+| `Shift` + `1`-`9` | Move the selected window or dock item to that numbered desktop |
+| `U` | Hold or release the selected window, or the dock item under the pointer; held windows follow you across desktops |
 | `F2` | Rename the selected (or current) virtual desktop |
 | `N` | Create a new virtual desktop (strip focused) |
-| `h` `j` `k` `l` | Vim movement (move through the grid / desktop strip) |
+| `h` `j` `k` `l` | Vim movement through the grid, held dock or desktop strip |
 | `/` | Focus the search field (reveals it when hidden) |
-| `x` | Close the selected window (Vim) |
+| `x` | Close the selected window or dock item (Vim) |
 | Typing while the search is focused | Filter windows by title or application |
 | Left click | Activate a window, or jump straight to a desktop |
 | Right click a desktop | Rename that virtual desktop |
 | Middle click on a card or dock item | Close that window |
 | Click a held dock item | Activate that window |
-| Click `+` on the strip | Create a new virtual desktop |
+| Click the create control on the strip | Create a new virtual desktop (a `+`, or the face-down card) |
 | Pull the create card down | Create a new virtual desktop (playing-card tabs) |
 | Click `x` on the active desktop | Close the current virtual desktop |
 | Mouse wheel | Move through grid pages |
@@ -127,13 +131,15 @@ movement keys.
 | Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
-| Window tabs | Regular cards, or poker chips with the window title curved around the top rim |
+| Window tabs | Square previews, or poker chips with the window title curved around the top rim |
 | Window chip content | Live window preview, app icon, or name only |
+| Window chip size | Small, medium, large or extra-large poker-chip window tabs |
 | Chip colors | Theme accent shades, a single color, a custom palette, or classic casino colors |
 | Chip color | Single chip color in `#RRGGBB` format (Single color mode) |
 | Chip palette | Comma-separated `#RRGGBB` colors cycled across desktop and window chips (Custom palette mode) |
 | Desktop selection | Accent outline, or pick-up/lift for the selected and active desktop tabs |
 | Held windows | Keep held windows in the grid, or dock them on the left or right |
+| Held dock background | Show a panel behind the dock; turn off for a floating dock |
 | Lift held windows | Raise windows held with `U` so they look picked up |
 | Lift hovered windows | Raise a window while the pointer is over it |
 | Lift selected window | Raise the keyboard-selected window in the grid |
@@ -141,7 +147,8 @@ movement keys.
 | Desktop tabs | Pills, poker chips, or playing cards |
 | Card size | Small, medium or large playing cards |
 | Desktop strip background | Panel behind the tabs: Auto (flat only), Always show, or Always hide |
-| Animation speed | Relative speed of the open and close animations |
+| Animation speed | Relative speed of the open, close and playing-card animations |
+| Card animations | Animate the playing-card draw and throw when creating or closing a desktop |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
 | Wrap desktop strip | `Left`/`Right` and `h`/`l` wrap from the last desktop to the first |
@@ -191,8 +198,8 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 - **Flat row** (default) – every desktop in a single row, with the create button
   after them and the strip panel behind them.
 - **Carousel** – the active desktop sits in the centre, its neighbours curve and
-  tilt away, and the wheel turns as you switch. Selecting a desktop with `Tab`,
-  `h` / `l` or the arrows spins the strip to it; clicking a side tab jumps
+  tilt away, and the wheel turns as you switch. Once the strip has focus, `h` /
+  `l` or the arrows spin the wheel to a desktop; clicking a side tab jumps
   straight there.
 
 **Desktop tabs** chooses the tab shape for both layouts:
@@ -211,8 +218,9 @@ still controls how strongly the panel tint covers the backdrop in every theme.
   create button is a face-down card: click it, or pull it downward, to create a
   new desktop.
 
-The old **Playing cards** value under **Desktop strip** is still accepted so
-existing settings keep working. New setups should use **Desktop tabs**.
+With **Card animations** on, creating a desktop draws a card from the deck onto
+the new desktop tab, and closing one throws its card off the strip. The card
+animations use the same **Animation speed** as the open and close transitions.
 
 **Desktop selection** changes how the active and selected desktop tabs are
 marked. **Accent outline** (default) keeps the current accent border. **Lift**
@@ -231,37 +239,44 @@ instead of stopping at the edge.
 
 ## Window chips
 
-**Window tabs** can draw each open window as a regular preview card or as a
+**Window tabs** can draw each open window as a square preview or as a
 poker chip. The window title is curved around the top rim, one character at a
 time, and the centre can show:
 
-- **Live window preview** (default) – the real DWM thumbnail, framed in a
-  centered square inside the chip.
+- **Live window preview** (default) – the real DWM thumbnail, clipped to a
+  circle inside the chip.
 - **App icon** – the application icon on a light centre disc.
 - **Name only** – just the curved title and the coloured chip surface.
 
-The live preview is a DWM thumbnail, which cannot be clipped to a circle, so it
-is deliberately kept as a centered square inside the chip rather than filling
-the whole rim. **Chip colors** is shared by window chips and desktop chips, so
-the two styles always match. Theme mode derives a set of accent shades; Classic
-keeps the original casino colors; Single color paints every chip the same; and
-Custom palette cycles through the comma-separated colors.
+**Window chip size** makes the chips small, medium, large or extra-large; the
+grid and the held dock both scale with it. The circular preview is a real DWM
+thumbnail: the thumbnail is hosted on a separate top-level window, and a layered
+mask paints the chip foreground with a transparent circular hole over it, so
+the square thumbnail corners never show. **Chip colors** is shared by window
+chips and desktop chips, so the two styles always match. Theme mode derives a set
+of accent shades; Classic keeps the original casino colors; Single color paints
+every chip the same; and Custom palette cycles through the comma-separated
+colors.
 
 ## Held windows
 
 Press `U` to hold the selected window. Held windows follow you to every desktop
 you switch to, and they get a colored frame and corner dot. By default they stay
 in the grid. Set **Held windows** to **Dock on the left** or **Dock on the
-right** to move them into a side panel instead; the panel uses the same cards or
-poker chips as the grid, so the two modes stay visually consistent.
+right** to move them into a side panel instead; the panel uses the same squares
+or poker chips as the grid, so the two modes stay visually consistent.
 
-The dock is not part of keyboard grid navigation. Click a dock item to activate
-it, middle-click it to close it, or hover it and press `U` to release it back
-into the grid. Held dock items stay visible while a search is active, so a held
-window is always one click away. **Lift held windows** is on by default so held
-items look picked up; **Lift hovered windows** and **Lift selected window** are
-optional and add the same raised look to the pointer hover and the keyboard
-cursor. The lift deepens the shadow and leaves the item otherwise unchanged.
+The dock has its own keyboard stage: press `Tab` from the grid to focus it, then
+use the arrows (or `h`/`j`/`k`/`l`) to select an item, `Enter` to activate it,
+`Delete` to close it and `U` to release it back into the grid. `Tab` continues to
+the desktop strip and then back to the grid; `Esc` leaves the dock. Clicking,
+middle-clicking or hovering a dock item still works as before. Held dock items
+stay visible while a search is active, so a held window is always one click
+away. Turn **Held dock background** off to let the dock float without a panel.
+**Lift held windows** is on by default so held items look picked up; **Lift
+hovered windows** and **Lift selected window** are optional and add the same
+raised look to the pointer hover and the keyboard cursor. The lift deepens the
+shadow and leaves the item otherwise unchanged.
 
 ## Search
 
@@ -387,9 +402,9 @@ OverhauldedWinTab is a pre-release project.
       $description: Keep the search bar visible. When off, press / to reveal it.
     - WindowTabs: "cards"
       $name: Window tabs
-      $description: Draw open windows as regular cards, or as round poker chips with the title curved around the rim.
+      $description: Draw open windows as square previews, or as round poker chips with the title curved around the rim.
       $options:
-      - "cards": Cards
+      - "cards": Squares
       - "chips": Poker chips
     - WindowChipContent: "preview"
       $name: Window chip content
@@ -398,6 +413,14 @@ OverhauldedWinTab is a pre-release project.
       - "preview": Live window preview
       - "icon": App icon
       - "blank": Name only
+    - WindowChipSize: "medium"
+      $name: Window chip size
+      $description: Size of poker-chip window tabs. Larger chips use more of the grid.
+      $options:
+      - "small": Small
+      - "medium": Medium
+      - "large": Large
+      - "extra-large": Extra large
     - ChipColorMode: "theme"
       $name: Chip colors
       $description: Palette used by desktop chips and window chips. Theme derives a set of shades from the active accent color; Classic keeps the original casino colors.
@@ -420,11 +443,14 @@ OverhauldedWinTab is a pre-release project.
       - "lift": Pick up / lift
     - HeldDock: "off"
       $name: Held windows
-      $description: Keep held windows in the grid, or move them into a side dock. The dock works for both window cards and poker chips.
+      $description: Keep held windows in the grid, or move them into a side dock. The dock works for both window squares and poker chips.
       $options:
       - "off": Keep in the grid
       - "left": Dock on the left
       - "right": Dock on the right
+    - HeldDockBackground: true
+      $name: Held dock background
+      $description: Show a panel behind the held-window dock. Turn off to let the dock float over the desktop.
     - LiftHeldWindows: true
       $name: Lift held windows
       $description: Raise windows held with U so they look picked up.
@@ -436,11 +462,10 @@ OverhauldedWinTab is a pre-release project.
       $description: Raise the keyboard-selected window in the grid.
     - DesktopStrip: "flat"
       $name: Desktop strip
-      $description: Lay the virtual desktops out as a flat row or a rotating carousel. The legacy "Playing cards" value is still accepted; use Desktop tabs to choose the tab shape.
+      $description: Lay the virtual desktops out as a flat row or a rotating carousel.
       $options:
       - "flat": Flat row
       - "carousel": Carousel
-      - "cards": Playing cards (legacy)
     - StripTabs: "pill"
       $name: Desktop tabs
       $description: Shape of the desktop tabs. Poker chips show the desktop number on a round chip with the name below; playing cards turn each desktop into a portrait card.
@@ -464,12 +489,15 @@ OverhauldedWinTab is a pre-release project.
       - "hide": Always hide
     - AnimationSpeed: "100"
       $name: Animation speed
-      $description: Relative speed of the open and close animations.
+      $description: Relative speed of the open, close and playing-card animations.
       $options:
       - "75": 75%
       - "100": 100%
       - "125": 125%
       - "150": 150%
+    - CardAnimations: true
+      $name: Card animations
+      $description: Animate playing cards being drawn from the deck and thrown away when a desktop is created or closed.
   $name: Appearance
 - Behavior:
     - CloseOnFocusLoss: true
@@ -500,6 +528,7 @@ OverhauldedWinTab is a pre-release project.
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -509,6 +538,7 @@ OverhauldedWinTab is a pre-release project.
 
 static const WCHAR kOverlayClass[] = L"OverhauldedWinTabOverlay";
 static const WCHAR kControlClass[] = L"OverhauldedWinTabInput";
+static const WCHAR kChipLayerClass[] = L"OverhauldedWinTabChipLayer";
 static const WCHAR kControlTitleIdle[] = L"Overhaulded Win+Tab";
 static const WCHAR kControlTitleReady[] = L"Overhaulded Win+Tab (ready)";
 static const WCHAR kHotkeyMessageName[] = L"OverhauldedWinTab_Hotkey";
@@ -723,15 +753,18 @@ static bool g_vimNavigation = true;
 static std::wstring g_titleText = L"Task View";
 static WindowTabStyle g_windowTabStyle = WindowTabStyle::Cards;
 static WindowChipContent g_windowChipContent = WindowChipContent::Preview;
+static float g_windowChipScale = 1.0f;
 static ChipColorMode g_chipColorMode = ChipColorMode::Theme;
 static UINT32 g_chipColor = 0xFF1E5AA8;
 static std::vector<UINT32> g_chipPalette;
 static std::vector<UINT32> g_themeChipColors;
 static DesktopSelection g_desktopSelection = DesktopSelection::Highlight;
 static HeldDock g_heldDock = HeldDock::Off;
+static bool g_heldDockBackground = true;
 static bool g_liftHeldWindows = true;
 static bool g_liftHoveredWindows = false;
 static bool g_liftSelectedWindow = false;
+static bool g_cardAnimations = true;
 
 // Overlay window and presentation.
 static HWND g_overlay = nullptr;
@@ -760,6 +793,8 @@ static bool g_searchSelectAll = false;
 static int g_selected = 0;
 static int g_page = 0;
 static bool g_focusStrip = false;
+static bool g_focusDock = false;
+static int g_dockSelected = 0;
 static int g_desktopSelected = 0;
 static bool g_busy = false;
 static bool g_trackingMouse = false;
@@ -891,9 +926,56 @@ static RectF g_dockArea;
 static RectF g_createRect;
 static RectF g_searchClearRect;
 
-// DWM thumbnails.
-static std::vector<HTHUMBNAIL> g_thumbHandles;
-static std::vector<HWND> g_thumbSources;
+// Playing-card desktop animations. A draw animation lifts a face-down card
+// from the create deck onto a newly created desktop; a throw animation carries
+// a closing desktop card off the strip.
+enum class CardAnimationMode
+{
+    None,
+    Draw,
+    Throw
+};
+
+struct CardAnimation
+{
+    CardAnimationMode mode = CardAnimationMode::None;
+    GUID desktopId = {};
+    int number = 0;
+    int suit = 0;
+    std::wstring name;
+    RectF from, to;
+    float fromScale = 1.0f;
+    float toScale = 1.0f;
+    float fromAngle = 0.0f;
+    float toAngle = 0.0f;
+    ULONGLONG start = 0;
+    float duration = 0.4f;
+};
+static CardAnimation g_cardAnim;
+static bool g_pendingDrawCard = false;
+static size_t g_pendingDrawFromCount = 0;
+static ULONGLONG g_pendingDrawTick = 0;
+
+// DWM thumbnails. Window squares keep their thumbnails on the overlay; window
+// chips use a separate top-level host so a full-screen layered mask can cover
+// the square thumbnail corners and leave a circular preview.
+struct ThumbnailSet
+{
+    std::vector<HTHUMBNAIL> handles;
+    std::vector<HWND> sources;
+};
+static ThumbnailSet g_overlayThumbs;
+static ThumbnailSet g_chipThumbs;
+static HWND g_thumbHost = nullptr;
+static HWND g_chipMask = nullptr;
+static bool g_chipLayersVisible = false;
+static HBITMAP g_maskBitmap = nullptr;
+static HGDIOBJ g_maskOldBitmap = nullptr;
+static HDC g_maskDC = nullptr;
+static void* g_maskBits = nullptr;
+static int g_maskW = 0;
+static int g_maskH = 0;
+static uint64_t g_chipRegionHash = 0;
 
 // Hotkey plumbing.
 static UINT g_hotkeyMessage = 0;
@@ -915,6 +997,12 @@ static void CommitRenameDesktop();
 static void CancelRenameDesktop();
 static void KickCarousel();
 static float BackgroundScrimAlpha();
+static bool DockExists();
+static void ClearCardAnimation();
+static void KickCardAnimation();
+static void StartDesktopCardThrow(int desktop);
+static void ReleaseChipMaskSurface();
+static void SetChipLayersVisible(bool visible);
 
 // Windhawk tool mod callbacks.
 BOOL WhTool_ModInit();
@@ -1154,6 +1242,12 @@ static void LoadSettings()
                         : chipContent == L"blank" ? WindowChipContent::Blank
                                                    : WindowChipContent::Preview;
 
+    const std::wstring chipSize = read(L"Appearance.WindowChipSize");
+    g_windowChipScale = chipSize == L"small" ? 0.82f
+                      : chipSize == L"large" ? 1.22f
+                      : chipSize == L"extra-large" ? 1.45f
+                                                   : 1.0f;
+
     const std::wstring chipMode = read(L"Appearance.ChipColorMode");
     g_chipColorMode = chipMode == L"single" ? ChipColorMode::Single
                     : chipMode == L"palette" ? ChipColorMode::Palette
@@ -1191,6 +1285,7 @@ static void LoadSettings()
     g_heldDock = heldDock == L"left" ? HeldDock::Left
                : heldDock == L"right" ? HeldDock::Right
                                       : HeldDock::Off;
+    g_heldDockBackground = Wh_GetIntSetting(L"Appearance.HeldDockBackground") != 0;
     g_liftHeldWindows = Wh_GetIntSetting(L"Appearance.LiftHeldWindows") != 0;
     g_liftHoveredWindows = Wh_GetIntSetting(L"Appearance.LiftHoveredWindows") != 0;
     g_liftSelectedWindow = Wh_GetIntSetting(L"Appearance.LiftSelectedWindow") != 0;
@@ -1202,15 +1297,6 @@ static void LoadSettings()
     g_tabStyle = tabs == L"chip" ? TabStyle::Chip
                : tabs == L"cards" ? TabStyle::Cards
                                   : TabStyle::Pill;
-
-    // v0.6 stored the playing-card wheel in DesktopStrip. Keep that layout for
-    // existing installs, but let an explicit chip/card tab choice win.
-    if (strip == L"cards")
-    {
-        g_stripStyle = StripStyle::Carousel;
-        if (tabs != L"chip" && tabs != L"cards")
-            g_tabStyle = TabStyle::Cards;
-    }
 
     const std::wstring cardSize = read(L"Appearance.CardSize");
     g_cardScale = cardSize == L"small" ? 0.82f
@@ -1228,6 +1314,8 @@ static void LoadSettings()
     const std::wstring speed = read(L"Appearance.AnimationSpeed");
     g_animSpeedPercent = speed == L"75" ? 75 : speed == L"125" ? 125
                         : speed == L"150" ? 150 : 100;
+
+    g_cardAnimations = Wh_GetIntSetting(L"Appearance.CardAnimations") != 0;
 
     g_closeOnFocusLoss = Wh_GetIntSetting(L"Behavior.CloseOnFocusLoss") != 0;
     g_wrapNavigation = Wh_GetIntSetting(L"Behavior.WrapNavigation") != 0;
@@ -1974,7 +2062,19 @@ static bool IsRenamingDesktop()
 static HWND SelectedWindow()
 {
     HWND window = nullptr;
-    if (g_selected >= 0 && g_selected < static_cast<int>(g_filtered.size()))
+
+    // The dock has its own keyboard cursor, so actions such as U, M and
+    // Shift+Left/Right operate on the dock item while the dock has focus.
+    if (g_focusDock && g_dockSelected >= 0 &&
+        g_dockSelected < static_cast<int>(g_dockCards.size()))
+    {
+        const int entry = g_dockCards[g_dockSelected].entry;
+        if (entry >= 0 && entry < static_cast<int>(g_windows.size()))
+            window = g_windows[entry].hwnd;
+    }
+
+    if ((!window || !IsWindow(window)) && g_selected >= 0 &&
+        g_selected < static_cast<int>(g_filtered.size()))
         window = g_windows[g_filtered[g_selected]].hwnd;
     if (!window || !IsWindow(window))
         window = g_originWindow;
@@ -2448,6 +2548,7 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
     if (g_busy)
         return;
 
+    SetChipLayersVisible(false);
     ReleaseThumbnails();
     g_busy = true;
     g_pendingDesktopTarget = -1;
@@ -2456,12 +2557,20 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
     bool direct = false;
     if (create)
     {
+        // The new desktop only exists after the shell handles Win+Ctrl+D, so
+        // remember the count and start the draw animation once it appears.
+        g_pendingDrawCard = g_cardAnimations && UsesCards();
+        g_pendingDrawFromCount = g_desktops.size();
+        g_pendingDrawTick = GetTickCount64();
         SendChord('D', false);
     }
     else if (closeActive)
     {
         if (g_desktops.size() > 1)
+        {
+            StartDesktopCardThrow(g_currentDesktop);
             SendChord(VK_F4, false);
+        }
     }
     else if (targetDesktop >= 0 &&
              targetDesktop < static_cast<int>(g_desktops.size()))
@@ -2950,7 +3059,7 @@ static void UpdateLayout()
 
     if (!heldEntries.empty())
     {
-        float dockW = (windowChips ? 210.0f : 235.0f) * s;
+        float dockW = (windowChips ? 210.0f * g_windowChipScale : 235.0f) * s;
         dockW = std::min(dockW,
                          std::max(150.0f * s, g_layout.grid.W() * 0.30f));
         const float dockGap = 18.0f * s;
@@ -2970,7 +3079,8 @@ static void UpdateLayout()
 
     const float gridW = g_layout.grid.W();
     const float gridH = g_layout.grid.H();
-    const float maxCardW = (windowChips ? 300.0f : 400.0f) * s;
+    const float maxCardW =
+        (windowChips ? 300.0f * g_windowChipScale : 400.0f) * s;
 
     int cols = 0;
     float cardW = 0.0f, cardH = 0.0f;
@@ -3056,7 +3166,7 @@ static void UpdateLayout()
             const float cx = left + cardW / 2.0f;
             const float cy = top + cardH / 2.0f;
             const float previewD =
-                cardW * (cardW >= 200.0f * s ? 0.58f : 0.52f);
+                cardW * (cardW >= 180.0f * s ? 0.68f : 0.60f);
             card.header = {left, top, left + cardW, top + headerH};
             card.preview = {cx - previewD / 2.0f, cy - previewD / 2.0f,
                             cx + previewD / 2.0f, cy + previewD / 2.0f};
@@ -3130,7 +3240,7 @@ static void UpdateLayout()
                 const float cx = left + itemW / 2.0f;
                 const float cy = y + itemH / 2.0f;
                 const float previewD =
-                    itemW * (itemW >= 200.0f * s ? 0.58f : 0.52f);
+                    itemW * (itemW >= 180.0f * s ? 0.68f : 0.60f);
                 card.header = {left, y, left + itemW, y + 24.0f * s};
                 card.preview = {cx - previewD / 2.0f, cy - previewD / 2.0f,
                                 cx + previewD / 2.0f, cy + previewD / 2.0f};
@@ -3168,28 +3278,52 @@ static void UpdateLayout()
     }
 
     RebuildPills();
+
+    if (g_dockCards.empty())
+    {
+        g_focusDock = false;
+        g_dockSelected = 0;
+    }
+    else
+    {
+        g_dockSelected = std::max(
+            0, std::min(g_dockSelected, static_cast<int>(g_dockCards.size()) - 1));
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // DWM THUMBNAILS
 
-static void ReleaseThumbnails()
+static void ReleaseThumbnailSet(ThumbnailSet& set)
 {
-    for (HTHUMBNAIL thumbnail : g_thumbHandles)
+    for (HTHUMBNAIL thumbnail : set.handles)
         if (thumbnail)
             DwmUnregisterThumbnail(thumbnail);
-    g_thumbHandles.clear();
-    g_thumbSources.clear();
+    set.handles.clear();
+    set.sources.clear();
 }
 
-static void SyncThumbnails(const std::vector<HWND>& sources,
-                           const std::vector<RectF>& rects, float opacity)
+static void ReleaseThumbnails()
 {
-    bool same = sources.size() == g_thumbSources.size();
+    ReleaseThumbnailSet(g_overlayThumbs);
+    ReleaseThumbnailSet(g_chipThumbs);
+}
+
+static void SyncThumbnailSet(HWND destination, ThumbnailSet& set,
+                             const std::vector<HWND>& sources,
+                             const std::vector<RectF>& rects, float opacity)
+{
+    if (!destination)
+    {
+        ReleaseThumbnailSet(set);
+        return;
+    }
+
+    bool same = sources.size() == set.sources.size();
     if (same)
     {
         for (size_t i = 0; i < sources.size(); i++)
-            if (sources[i] != g_thumbSources[i])
+            if (sources[i] != set.sources[i])
             {
                 same = false;
                 break;
@@ -3198,24 +3332,24 @@ static void SyncThumbnails(const std::vector<HWND>& sources,
 
     if (!same)
     {
-        ReleaseThumbnails();
+        ReleaseThumbnailSet(set);
         for (HWND source : sources)
         {
             HTHUMBNAIL thumbnail = nullptr;
-            if (SUCCEEDED(DwmRegisterThumbnail(g_overlay, source, &thumbnail)))
-                g_thumbHandles.push_back(thumbnail);
+            if (SUCCEEDED(DwmRegisterThumbnail(destination, source, &thumbnail)))
+                set.handles.push_back(thumbnail);
             else
-                g_thumbHandles.push_back(nullptr);
+                set.handles.push_back(nullptr);
         }
-        g_thumbSources = sources;
+        set.sources = sources;
     }
 
     const BYTE alpha =
         static_cast<BYTE>(std::max(0.0f, std::min(1.0f, opacity)) * 255.0f);
-    const size_t count = std::min(g_thumbHandles.size(), rects.size());
+    const size_t count = std::min(set.handles.size(), rects.size());
     for (size_t i = 0; i < count; i++)
     {
-        if (!g_thumbHandles[i])
+        if (!set.handles[i])
             continue;
         DWM_THUMBNAIL_PROPERTIES properties = {};
         properties.dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_VISIBLE |
@@ -3224,8 +3358,20 @@ static void SyncThumbnails(const std::vector<HWND>& sources,
         properties.fVisible = alpha > 6 ? TRUE : FALSE;
         properties.opacity = alpha;
         properties.fSourceClientAreaOnly = TRUE;
-        DwmUpdateThumbnailProperties(g_thumbHandles[i], &properties);
+        DwmUpdateThumbnailProperties(set.handles[i], &properties);
     }
+}
+
+static void SyncThumbnails(const std::vector<HWND>& sources,
+                           const std::vector<RectF>& rects, float opacity)
+{
+    SyncThumbnailSet(g_overlay, g_overlayThumbs, sources, rects, opacity);
+}
+
+static void SyncChipThumbnails(const std::vector<HWND>& sources,
+                               const std::vector<RectF>& rects, float opacity)
+{
+    SyncThumbnailSet(g_thumbHost, g_chipThumbs, sources, rects, opacity);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3272,6 +3418,65 @@ static void StrokeEllipse(float cx, float cy, float rx, float ry, UINT32 color,
     const D2D1_ELLIPSE ellipse =
         D2D1::Ellipse(D2D1::Point2F(cx, cy), rx, ry);
     g_d2dTarget->DrawEllipse(&ellipse, g_d2dBrush, width);
+}
+
+// Adds a closed circle to a geometry sink.
+static void AddCircleGeometry(ID2D1GeometrySink* sink, float cx, float cy,
+                              float radius)
+{
+    const D2D1_POINT_2F top = D2D1::Point2F(cx, cy - radius);
+    sink->BeginFigure(top, D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddArc(D2D1::ArcSegment(
+        D2D1::Point2F(cx + radius, cy), D2D1::SizeF(radius, radius), 0.0f,
+        D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+    sink->AddArc(D2D1::ArcSegment(
+        D2D1::Point2F(cx, cy + radius), D2D1::SizeF(radius, radius), 0.0f,
+        D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+    sink->AddArc(D2D1::ArcSegment(
+        D2D1::Point2F(cx - radius, cy), D2D1::SizeF(radius, radius), 0.0f,
+        D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+    sink->AddArc(D2D1::ArcSegment(
+        top, D2D1::SizeF(radius, radius), 0.0f,
+        D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+}
+
+// Fills an annulus. The inner circle is left transparent, which lets the
+// window-chip preview show through the layered mask.
+static void FillDonut(float cx, float cy, float outerR, float innerR,
+                      UINT32 color, float multiply = 1.0f)
+{
+    if (!g_d2dFactory || !g_d2dTarget || !g_d2dBrush || outerR <= 0.0f)
+        return;
+    if (innerR <= 0.0f)
+    {
+        FillEllipse(cx, cy, outerR, outerR, color, multiply);
+        return;
+    }
+    if (innerR >= outerR)
+        return;
+
+    ID2D1PathGeometry* geometry = nullptr;
+    if (FAILED(g_d2dFactory->CreatePathGeometry(&geometry)) || !geometry)
+        return;
+
+    ID2D1GeometrySink* sink = nullptr;
+    if (SUCCEEDED(geometry->Open(&sink)) && sink)
+    {
+        sink->SetFillMode(D2D1_FILL_MODE_ALTERNATE);
+        AddCircleGeometry(sink, cx, cy, outerR);
+        AddCircleGeometry(sink, cx, cy, innerR);
+        sink->Close();
+        sink->Release();
+
+        g_d2dBrush->SetColor(ColorOf(color, multiply));
+        g_d2dTarget->FillGeometry(geometry, g_d2dBrush);
+    }
+    else if (sink)
+    {
+        sink->Release();
+    }
+    geometry->Release();
 }
 
 static void DrawTextBlock(const std::wstring& text, IDWriteTextFormat* format,
@@ -3570,14 +3775,6 @@ static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
     FillEllipse(cx, cy, 18.0f * s, 18.0f * s,
                 MixColor(back, 0xFFFFFFFF, 0.08f), 1.0f);
     StrokeEllipse(cx, cy, 18.0f * s, 18.0f * s, gold, 1.2f * s, 0.80f);
-    g_d2dBrush->SetColor(ColorOf(gold, 0.96f));
-    const float arm = 11.0f * s;
-    g_d2dTarget->DrawLine(D2D1::Point2F(cx - arm, cy),
-                          D2D1::Point2F(cx + arm, cy), g_d2dBrush,
-                          2.2f * s);
-    g_d2dTarget->DrawLine(D2D1::Point2F(cx, cy - arm),
-                          D2D1::Point2F(cx, cy + arm), g_d2dBrush,
-                          2.2f * s);
 
     const RectF label = {card.l + 18.0f * s, card.b - 36.0f * s,
                          card.r - 18.0f * s, card.b - 12.0f * s};
@@ -3585,6 +3782,276 @@ static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
     StrokeRound(label, 7.0f * s, gold, 0.8f * s, 0.40f);
     DrawTextBlock(L"New desktop", g_fmtHint, label, g_theme.text,
                   DWRITE_TEXT_ALIGNMENT_CENTER, 0.78f);
+}
+
+static void ClearCardAnimation()
+{
+    g_cardAnim = CardAnimation();
+    g_pendingDrawCard = false;
+}
+
+static void KickCardAnimation()
+{
+    if (!g_overlay)
+        return;
+    g_lastFrameTick = GetTickCount64();
+    SetTimer(g_overlay, kTimerFrame, 16, nullptr);
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
+// Picks a card-sized target rectangle for the newly created desktop. Called
+// after UpdateLayout, so the new pill already exists and can be used as the
+// landing spot for the drawn card.
+static void StartDesktopCardDraw(int desktop)
+{
+    const GUID noDesktop = {};
+    if (!g_cardAnimations || !UsesCards() || desktop < 0 ||
+        desktop >= static_cast<int>(g_desktops.size()) ||
+        IsEqualGUID(g_desktops[desktop].id, noDesktop))
+        return;
+
+    // Fallback landing spot: the centre of the strip, card-sized. The carousel
+    // can move the target tab during the flight, so DrawCardAnimation keeps
+    // following the real pill; this is only used if the pill is not visible yet.
+    const float fallbackW = g_createRect.W() > 0.0f ? g_createRect.W() : 120.0f * g_scale;
+    const float fallbackH = g_createRect.H() > 0.0f ? g_createRect.H() : 160.0f * g_scale;
+    const float fallbackCx = (g_layout.strip.l + g_layout.strip.r) / 2.0f;
+    const float fallbackCy = (g_layout.strip.t + g_layout.strip.b) / 2.0f;
+    RectF to = {fallbackCx - fallbackW / 2.0f, fallbackCy - fallbackH / 2.0f,
+                fallbackCx + fallbackW / 2.0f, fallbackCy + fallbackH / 2.0f};
+    for (const PillView& pill : g_pills)
+    {
+        if (pill.desktop == desktop && pill.visible)
+        {
+            to = pill.rect;
+            to.t -= pill.lift;
+            to.b -= pill.lift;
+            break;
+        }
+    }
+
+    CardAnimation anim;
+    anim.mode = CardAnimationMode::Draw;
+    anim.desktopId = g_desktops[desktop].id;
+    anim.number = desktop + 1;
+    anim.suit = desktop & 3;
+    anim.name = g_desktops[desktop].name;
+    anim.from = g_createRect;
+    anim.to = to;
+    anim.fromScale = 0.88f;
+    anim.toScale = 1.0f;
+    anim.fromAngle = -8.0f;
+    anim.toAngle = 0.0f;
+    anim.start = GetTickCount64();
+    anim.duration = AnimationSeconds(0.52f);
+    g_cardAnim = anim;
+    KickCardAnimation();
+}
+
+// Carries a closing desktop card off the right edge. The caller invokes this
+// before the desktop action, while the desktop and its pill still exist.
+static void StartDesktopCardThrow(int desktop)
+{
+    const GUID noDesktop = {};
+    if (!g_cardAnimations || !UsesCards() || desktop < 0 ||
+        desktop >= static_cast<int>(g_desktops.size()) ||
+        IsEqualGUID(g_desktops[desktop].id, noDesktop))
+        return;
+
+    RectF from = g_createRect;
+    for (const PillView& pill : g_pills)
+    {
+        if (pill.desktop == desktop && pill.visible)
+        {
+            from = pill.rect;
+            from.t -= pill.lift;
+            from.b -= pill.lift;
+            break;
+        }
+    }
+
+    CardAnimation anim;
+    anim.mode = CardAnimationMode::Throw;
+    anim.desktopId = g_desktops[desktop].id;
+    anim.number = desktop + 1;
+    anim.suit = desktop & 3;
+    anim.name = g_desktops[desktop].name;
+    anim.from = from;
+    const float dx = g_layout.w - from.l + 80.0f * g_scale;
+    anim.to = {from.l + dx, from.t + 120.0f * g_scale,
+               from.r + dx, from.b + 120.0f * g_scale};
+    anim.fromScale = 1.0f;
+    anim.toScale = 0.78f;
+    anim.fromAngle = 0.0f;
+    anim.toAngle = 30.0f;
+    anim.start = GetTickCount64();
+    anim.duration = AnimationSeconds(0.42f);
+    g_cardAnim = anim;
+    g_pendingDrawCard = false;
+    KickCardAnimation();
+}
+
+// A compact playing-card face used by the draw and throw ghosts. It mirrors the
+// desktop-card language but takes its rank, suit and name from the animation,
+// so it can outlive the desktop it represents.
+static void DrawGhostCardFace(const RectF& face, int number, int suit,
+                              const std::wstring& name, float alpha)
+{
+    if (face.W() <= 0.0f || face.H() <= 0.0f || alpha <= 0.01f)
+        return;
+
+    const float s = g_scale;
+    const float radius = 12.0f * s;
+    const UINT32 faceColor = 0xFFF8F5EC;
+    const UINT32 ink = 0xFF1C1B20;
+    const UINT32 red = 0xFFC62828;
+    const UINT32 suitColor = (suit == 1 || suit == 2) ? red : ink;
+    const WCHAR* glyph = suit == 0 ? L"\u2660"
+                        : suit == 1 ? L"\u2665"
+                        : suit == 2 ? L"\u2666"
+                                    : L"\u2663";
+
+    const RectF shadow = {face.l, face.t + 8.0f * s, face.r,
+                          face.b + 14.0f * s};
+    FillRound(shadow, radius + 2.0f * s, 0xFF000000, 0.28f * alpha);
+    FillRound(face, radius, faceColor, alpha);
+    StrokeRound(face, radius, ink, 1.0f * s, 0.55f * alpha);
+    const RectF inner = {face.l + 5.0f * s, face.t + 5.0f * s,
+                         face.r - 5.0f * s, face.b - 5.0f * s};
+    StrokeRound(inner, std::max(2.0f * s, radius - 4.0f * s), ink,
+                1.0f * s, 0.14f * alpha);
+
+    const float pad = 9.0f * s;
+    const float idxW = 34.0f * s;
+    const std::wstring rank = std::to_wstring(number);
+    IDWriteTextFormat* suitFmt = g_fmtCardSuit ? g_fmtCardSuit : g_fmtPillLarge;
+    const RectF rankRect = {face.l + pad, face.t + 5.0f * s,
+                            face.l + pad + idxW, face.t + 27.0f * s};
+    const RectF suitRect = {face.l + pad, face.t + 24.0f * s,
+                            face.l + pad + idxW, face.t + 44.0f * s};
+    DrawTextBlock(rank, g_fmtPillLarge, rankRect, suitColor,
+                  DWRITE_TEXT_ALIGNMENT_CENTER, alpha);
+    DrawTextBlock(glyph, suitFmt, suitRect, suitColor,
+                  DWRITE_TEXT_ALIGNMENT_CENTER, alpha);
+
+    const RectF bRankRect = {face.r - pad - idxW, face.b - 27.0f * s,
+                             face.r - pad, face.b - 5.0f * s};
+    const RectF bSuitRect = {face.r - pad - idxW, face.b - 44.0f * s,
+                             face.r - pad, face.b - 24.0f * s};
+    DrawRotatedTextBlock(rank, g_fmtPillLarge, bRankRect, suitColor,
+                         DWRITE_TEXT_ALIGNMENT_CENTER, alpha, 180.0f);
+    DrawRotatedTextBlock(glyph, suitFmt, bSuitRect, suitColor,
+                         DWRITE_TEXT_ALIGNMENT_CENTER, alpha, 180.0f);
+
+    const float h = face.H();
+    const RectF bigSuit = {face.l + 18.0f * s, face.t + h * 0.27f,
+                           face.r - 18.0f * s, face.t + h * 0.63f};
+    DrawTextBlock(glyph, g_fmtCardSuitBig ? g_fmtCardSuitBig : suitFmt, bigSuit,
+                  suitColor, DWRITE_TEXT_ALIGNMENT_CENTER, 0.14f * alpha);
+
+    if (!name.empty())
+    {
+        const RectF nameRect = {face.l + 8.0f * s, face.t + h * 0.64f,
+                                face.r - 8.0f * s, face.t + h * 0.80f};
+        DrawTextBlock(name, g_fmtHint, nameRect, ink,
+                      DWRITE_TEXT_ALIGNMENT_CENTER, 0.78f * alpha);
+    }
+}
+
+// While a draw or throw ghost is in flight, the real desktop tab is hidden so
+// the card does not appear twice. The check uses the elapsed time rather than
+// just the mode, so the tab reappears on the same frame the ghost lands.
+static bool CardAnimationHidesDesktop(int desktop)
+{
+    const GUID noDesktop = {};
+    if (g_cardAnim.mode == CardAnimationMode::None || desktop < 0 ||
+        desktop >= static_cast<int>(g_desktops.size()) ||
+        IsEqualGUID(g_cardAnim.desktopId, noDesktop) ||
+        !IsEqualGUID(g_cardAnim.desktopId, g_desktops[desktop].id))
+        return false;
+    const float duration = std::max(0.05f, g_cardAnim.duration);
+    const float elapsed =
+        static_cast<float>(GetTickCount64() - g_cardAnim.start) / 1000.0f;
+    return elapsed < duration;
+}
+
+static void DrawCardAnimation()
+{
+    if (g_cardAnim.mode == CardAnimationMode::None)
+        return;
+
+    // The carousel keeps turning while the drawn card is in flight. Follow the
+    // landing tab so the card arrives at its final position instead of a stale
+    // one captured on the first frame after the desktop appeared.
+    if (g_cardAnim.mode == CardAnimationMode::Draw)
+    {
+        for (const PillView& pill : g_pills)
+        {
+            if (pill.desktop < 0 ||
+                pill.desktop >= static_cast<int>(g_desktops.size()))
+                continue;
+            if (!IsEqualGUID(g_desktops[pill.desktop].id,
+                             g_cardAnim.desktopId))
+                continue;
+            g_cardAnim.to = pill.rect;
+            g_cardAnim.to.t -= pill.lift;
+            g_cardAnim.to.b -= pill.lift;
+            break;
+        }
+    }
+
+    const float duration = std::max(0.05f, g_cardAnim.duration);
+    const float elapsed =
+        static_cast<float>(GetTickCount64() - g_cardAnim.start) / 1000.0f;
+    if (elapsed >= duration)
+    {
+        ClearCardAnimation();
+        return;
+    }
+
+    const float t = std::max(0.0f, std::min(1.0f, elapsed / duration));
+    const float eased = EaseOutCubic(t);
+    RectF rect = {g_cardAnim.from.l + (g_cardAnim.to.l - g_cardAnim.from.l) * eased,
+                  g_cardAnim.from.t + (g_cardAnim.to.t - g_cardAnim.from.t) * eased,
+                  g_cardAnim.from.r + (g_cardAnim.to.r - g_cardAnim.from.r) * eased,
+                  g_cardAnim.from.b + (g_cardAnim.to.b - g_cardAnim.from.b) * eased};
+
+    // A small arc makes the card feel lifted while it travels.
+    const float arc = std::sin(t * 3.14159265f);
+    if (g_cardAnim.mode == CardAnimationMode::Draw)
+    {
+        const float lift = arc * 18.0f * g_scale;
+        rect.t -= lift;
+        rect.b -= lift;
+    }
+    else
+    {
+        const float drop = arc * 10.0f * g_scale;
+        rect.t += drop;
+        rect.b += drop;
+    }
+
+    const float scale = g_cardAnim.fromScale +
+                        (g_cardAnim.toScale - g_cardAnim.fromScale) * eased;
+    const float angle = g_cardAnim.fromAngle +
+                        (g_cardAnim.toAngle - g_cardAnim.fromAngle) * eased;
+    float alpha = 1.0f;
+    if (g_cardAnim.mode == CardAnimationMode::Throw)
+    {
+        const float fade = std::max(0.0f, std::min(1.0f, (t - 0.55f) / 0.45f));
+        alpha = 1.0f - EaseOutCubic(fade);
+    }
+
+    const float cx = (rect.l + rect.r) / 2.0f;
+    const float cy = (rect.t + rect.b) / 2.0f;
+    D2D1::Matrix3x2F saved;
+    g_d2dTarget->GetTransform(&saved);
+    g_d2dTarget->SetTransform(
+        D2D1::Matrix3x2F::Scale(scale, scale, D2D1::Point2F(cx, cy)) *
+        D2D1::Matrix3x2F::Rotation(angle, D2D1::Point2F(cx, cy)) * saved);
+    DrawGhostCardFace(rect, g_cardAnim.number, g_cardAnim.suit, g_cardAnim.name,
+                      alpha);
+    g_d2dTarget->SetTransform(saved);
 }
 
 // A desktop tab rendered as a poker chip: coloured rim with edge spots, the
@@ -3782,9 +4249,12 @@ static void DrawWindowCard(const CardView& card, bool selected, bool hovered,
 }
 
 // A window rendered as a poker chip. The DWM preview, app icon or an empty
-// centre is framed by the rim, and the title follows the top arc.
+// centre is framed by the rim, and the title follows the top arc. In mask mode
+// the chip is painted into the top-level layered mask with a circular hole: the
+// DWM thumbnail below shows through the hole while the opaque ring hides the
+// square corners of the thumbnail.
 static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
-                           bool closeHovered)
+                           bool closeHovered, bool mask = false)
 {
     if (card.entry < 0 || card.entry >= static_cast<int>(g_windows.size()))
         return;
@@ -3796,19 +4266,33 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
     const float cx = (rect.l + rect.r) / 2.0f;
     const float cy = (rect.t + rect.b) / 2.0f;
     const float lift = card.lift;
+    const float previewR = card.preview.W() / 2.0f;
 
     WindowEntry& entry = g_windows[card.entry];
     UINT32 base = ChipColorForIndex(card.entry);
     if (hovered)
         base = MixColor(base, 0xFFFFFFFF, 0.10f);
     const UINT32 textColor = ChipTextColor(base);
+    const bool donut = mask && previewR > 0.0f;
 
-    FillEllipse(cx, cy + 7.0f * s + lift * 0.35f, r * 1.01f, r * 0.98f,
-                0xFF000000, 0.30f + (lift > 0.0f ? 0.08f : 0.0f));
+    if (!mask)
+    {
+        FillEllipse(cx, cy + 7.0f * s + lift * 0.35f, r * 1.01f, r * 0.98f,
+                    0xFF000000, 0.30f + (lift > 0.0f ? 0.08f : 0.0f));
+    }
 
-    FillEllipse(cx, cy, r, r, base, 1.0f);
-    FillEllipse(cx, cy, r * 0.87f, r * 0.87f,
-                MixColor(base, 0xFFFFFFFF, 0.07f), 1.0f);
+    if (donut)
+    {
+        FillDonut(cx, cy, r, previewR, base, 1.0f);
+        FillDonut(cx, cy, r * 0.87f, previewR,
+                  MixColor(base, 0xFFFFFFFF, 0.07f), 1.0f);
+    }
+    else
+    {
+        FillEllipse(cx, cy, r, r, base, 1.0f);
+        FillEllipse(cx, cy, r * 0.87f, r * 0.87f,
+                    MixColor(base, 0xFFFFFFFF, 0.07f), 1.0f);
+    }
 
     // Casino edge spots around the rim.
     D2D1::Matrix3x2F saved;
@@ -3825,15 +4309,18 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
     }
     g_d2dTarget->SetTransform(saved);
 
-    FillEllipse(cx, cy, r * 0.73f, r * 0.73f,
-                MixColor(base, 0xFF000000, 0.08f), 1.0f);
+    const UINT32 innerColor = MixColor(base, 0xFF000000, 0.08f);
+    if (donut)
+        FillDonut(cx, cy, r * 0.73f, previewR, innerColor, 1.0f);
+    else
+        FillEllipse(cx, cy, r * 0.73f, r * 0.73f, innerColor, 1.0f);
 
-    if (g_windowChipContent == WindowChipContent::Preview)
+    if (!mask && g_windowChipContent == WindowChipContent::Preview)
     {
-        FillRound(card.preview, 10.0f * s, g_theme.previewFill, 1.0f);
-        StrokeRound(card.preview, 10.0f * s, textColor, 1.0f * s, 0.22f);
+        FillEllipse(cx, cy, previewR, previewR, g_theme.previewFill, 1.0f);
+        StrokeEllipse(cx, cy, previewR, previewR, textColor, 1.0f * s, 0.22f);
     }
-    else if (g_windowChipContent == WindowChipContent::Icon)
+    else if (!mask && g_windowChipContent == WindowChipContent::Icon)
     {
         FillEllipse(cx, cy, r * 0.34f, r * 0.34f,
                     MixColor(base, 0xFFFFFFFF, 0.16f), 1.0f);
@@ -3851,7 +4338,9 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
     }
     // Blank content: the curved title is the only thing in the centre.
 
-    const float titleRadius = std::max(r * 0.62f, r - 16.0f * s);
+    // Keep the curved title on the rim ring, clear of the larger circular
+    // preview so it never sits on top of the live thumbnail.
+    const float titleRadius = std::max(r * 0.76f, r - 22.0f * s);
     IDWriteTextFormat* titleFormat =
         r >= 80.0f * s ? g_fmtPill : g_fmtHint;
     DrawArcText(entry.title, titleFormat, cx, cy, titleRadius, textColor,
@@ -3898,6 +4387,216 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// WINDOW-CHIP LAYERS
+//
+// DWM thumbnails are composed above normal window content and are not clipped
+// by a window region. A window chip therefore uses two extra top-level windows:
+// a host that owns the thumbnail and a layered mask above it. The mask paints
+// the chip foreground as a donut, leaving a transparent circular hole over the
+// thumbnail. The host region is the union of the preview squares, so the mask's
+// transparent area cannot reveal the host's black background.
+
+static void ReleaseChipMaskSurface()
+{
+    if (g_maskDC)
+    {
+        if (g_maskOldBitmap)
+            SelectObject(g_maskDC, g_maskOldBitmap);
+        DeleteDC(g_maskDC);
+    }
+    if (g_maskBitmap)
+        DeleteObject(g_maskBitmap);
+    g_maskDC = nullptr;
+    g_maskBitmap = nullptr;
+    g_maskOldBitmap = nullptr;
+    g_maskBits = nullptr;
+    g_maskW = 0;
+    g_maskH = 0;
+}
+
+static bool EnsureChipMaskSurface()
+{
+    if (!g_chipMask || g_monitorW <= 0 || g_monitorH <= 0)
+        return false;
+    if (g_maskBitmap && g_maskW == g_monitorW && g_maskH == g_monitorH)
+        return true;
+
+    ReleaseChipMaskSurface();
+
+    BITMAPINFO info = {};
+    info.bmiHeader.biSize = sizeof(info.bmiHeader);
+    info.bmiHeader.biWidth = g_monitorW;
+    info.bmiHeader.biHeight = -g_monitorH;  // Top-down: row 0 is the top.
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+
+    void* bits = nullptr;
+    HBITMAP bitmap = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &bits,
+                                      nullptr, 0);
+    if (!bitmap)
+        return false;
+
+    HDC dc = CreateCompatibleDC(nullptr);
+    if (!dc)
+    {
+        DeleteObject(bitmap);
+        return false;
+    }
+
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    g_maskBitmap = bitmap;
+    g_maskDC = dc;
+    g_maskOldBitmap = old;
+    g_maskBits = bits;
+    g_maskW = g_monitorW;
+    g_maskH = g_monitorH;
+    return true;
+}
+
+static void SetChipLayersVisible(bool visible)
+{
+    if (!visible)
+    {
+        if (!g_chipLayersVisible && g_chipThumbs.handles.empty())
+            return;
+        ReleaseThumbnailSet(g_chipThumbs);
+        if (g_thumbHost)
+            ShowWindow(g_thumbHost, SW_HIDE);
+        if (g_chipMask)
+            ShowWindow(g_chipMask, SW_HIDE);
+        g_chipLayersVisible = false;
+        g_chipRegionHash = 0;
+        return;
+    }
+
+    if (g_chipLayersVisible)
+        return;
+    if (!g_thumbHost || !g_chipMask)
+        return;
+
+    // Keep both windows hidden until the host region, thumbnails and mask have
+    // all been prepared, otherwise a black square can flash for one frame.
+    SetWindowPos(g_thumbHost, HWND_TOPMOST, g_monitorX, g_monitorY, g_monitorW,
+                 g_monitorH, SWP_NOACTIVATE);
+    SetWindowPos(g_chipMask, HWND_TOPMOST, g_monitorX, g_monitorY, g_monitorW,
+                 g_monitorH, SWP_NOACTIVATE);
+    g_chipLayersVisible = true;
+    g_chipRegionHash = 0;
+}
+
+static void UpdateChipHostRegion(const std::vector<RectF>& rects)
+{
+    if (!g_thumbHost)
+        return;
+
+    uint64_t hash = 1469598103934665603ull;
+    auto mix = [&hash](long long value) {
+        hash ^= static_cast<uint64_t>(value);
+        hash *= 1099511628211ull;
+    };
+    for (const RectF& rect : rects)
+    {
+        mix(std::lround(rect.l));
+        mix(std::lround(rect.t));
+        mix(std::lround(rect.r));
+        mix(std::lround(rect.b));
+    }
+    if (hash == g_chipRegionHash)
+        return;
+
+    HRGN region = CreateRectRgn(0, 0, 0, 0);
+    for (const RectF& rect : rects)
+    {
+        HRGN piece = CreateRectRgn(std::lround(rect.l), std::lround(rect.t),
+                                   std::lround(rect.r), std::lround(rect.b));
+        if (piece)
+        {
+            CombineRgn(region, region, piece, RGN_OR);
+            DeleteObject(piece);
+        }
+    }
+    // SetWindowRgn takes ownership of the region on success. Delete it if the
+    // call fails so a display change cannot leak a region every frame, and
+    // leave the hash unset so the region is retried on the next frame.
+    if (!SetWindowRgn(g_thumbHost, region, TRUE))
+    {
+        DeleteObject(region);
+        return;
+    }
+    g_chipRegionHash = hash;
+}
+
+static bool RenderChipMask(float sceneScale, float cx, float cy)
+{
+    if (!g_chipMask || !EnsureChipMaskSurface())
+        return false;
+    if (!EnsureFactories() || !EnsureDeviceResources())
+        return false;
+    EnsureTextFormats();
+
+    RECT rc = {0, 0, g_maskW, g_maskH};
+    if (FAILED(g_d2dTarget->BindDC(g_maskDC, &rc)))
+        return false;
+
+    if (g_maskBits)
+        std::memset(g_maskBits, 0,
+                    static_cast<size_t>(g_maskW) * g_maskH * 4);
+
+    g_d2dTarget->BeginDraw();
+    g_d2dTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
+    g_d2dTarget->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+    g_d2dTarget->PushAxisAlignedClip(
+        D2D1::RectF(0.0f, 0.0f, static_cast<float>(g_maskW),
+                    static_cast<float>(g_maskH)),
+        D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+    auto scaledCard = [&](const CardView& card) {
+        CardView view = card;
+        view.rect = ScaleAbout(card.rect, sceneScale, cx, cy);
+        view.header = ScaleAbout(card.header, sceneScale, cx, cy);
+        view.preview = ScaleAbout(card.preview, sceneScale, cx, cy);
+        view.close = ScaleAbout(card.close, sceneScale, cx, cy);
+        view.lift = card.lift * sceneScale;
+        return view;
+    };
+
+    for (int i = 0; i < static_cast<int>(g_cards.size()); i++)
+    {
+        const CardView view = scaledCard(g_cards[i]);
+        const bool isSelected = !g_focusStrip && !g_focusDock &&
+                                g_cards[i].filtered == g_selected;
+        DrawWindowChip(view, isSelected, g_hoverCard == i, g_hoverClose == i,
+                       true);
+    }
+    for (int i = 0; i < static_cast<int>(g_dockCards.size()); i++)
+    {
+        const CardView view = scaledCard(g_dockCards[i]);
+        const bool isSelected = g_focusDock && i == g_dockSelected;
+        DrawWindowChip(view, isSelected, g_hoverDock == i,
+                       g_hoverDockClose == i, true);
+    }
+
+    g_d2dTarget->PopAxisAlignedClip();
+    if (g_d2dTarget->EndDraw() == static_cast<HRESULT>(0x8899000C))
+    {
+        ReleaseDeviceResources();
+        return false;
+    }
+
+    BLENDFUNCTION blend = {};
+    blend.BlendOp = AC_SRC_OVER;
+    blend.SourceConstantAlpha = 255;
+    blend.AlphaFormat = AC_SRC_ALPHA;
+    POINT source = {0, 0};
+    SIZE size = {g_maskW, g_maskH};
+    POINT destination = {g_monitorX, g_monitorY};
+    return UpdateLayeredWindow(g_chipMask, nullptr, &destination, &size,
+                               g_maskDC, &source, 0, &blend, ULW_ALPHA) != FALSE;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // RENDER
 
 static void RenderScene(HDC dc)
@@ -3906,13 +4605,43 @@ static void RenderScene(HDC dc)
     GetClientRect(g_overlay, &client);
 
     if (!EnsureFactories() || !EnsureDeviceResources())
+    {
+        SetChipLayersVisible(false);
         return;
+    }
     EnsureTextFormats();
 
     if (FAILED(g_d2dTarget->BindDC(dc, &client)))
+    {
+        SetChipLayersVisible(false);
         return;
+    }
 
     UpdateLayout();
+
+    // A created desktop appears asynchronously. Start the draw animation on the
+    // first frame that can see the new desktop, so the card lands on its tab.
+    if (g_pendingDrawCard)
+    {
+        if (g_desktops.size() > g_pendingDrawFromCount)
+        {
+            // Creation appends a desktop at the end. If the shell has not
+            // reported the switch yet, land on the new last tab instead of the
+            // old current desktop.
+            int target = g_currentDesktop;
+            if (target < static_cast<int>(g_pendingDrawFromCount))
+                target = static_cast<int>(g_desktops.size()) - 1;
+            if (target >= 0 && target < static_cast<int>(g_desktops.size()))
+            {
+                g_pendingDrawCard = false;
+                StartDesktopCardDraw(target);
+            }
+        }
+        else if (GetTickCount64() - g_pendingDrawTick > 4000)
+        {
+            g_pendingDrawCard = false;
+        }
+    }
 
     // Opening / closing animation: fade plus a slight scale about the centre.
     const float presence = g_presence;
@@ -3924,35 +4653,50 @@ static void RenderScene(HDC dc)
 
     // DWM thumbnails are composed above the window, so they are not part of the
     // D2D scene: their rectangles are animated manually to match the cards.
-    std::vector<HWND> thumbSources;
-    std::vector<RectF> thumbRects;
+    // Window squares keep their thumbnails on the overlay. Window chips use the
+    // separate host so the circular mask can hide the square corners.
+    std::vector<HWND> overlaySources;
+    std::vector<RectF> overlayRects;
+    std::vector<HWND> chipSources;
+    std::vector<RectF> chipRects;
     if (!g_busy && contentAlpha > 0.02f)
     {
-        auto addThumbnails = [&](const std::vector<CardView>& cards) {
+        auto addThumbnails = [&](const std::vector<CardView>& cards,
+                                 std::vector<HWND>& sources,
+                                 std::vector<RectF>& rects, bool inset) {
             for (const CardView& card : cards)
             {
                 if (card.entry < 0 ||
                     card.entry >= static_cast<int>(g_windows.size()))
                     continue;
-                if (UsesWindowChips() &&
-                    g_windowChipContent != WindowChipContent::Preview)
-                    continue;
                 HWND source = g_windows[card.entry].hwnd;
                 if (!source || !IsWindow(source))
                     continue;
                 RectF preview = ScaleAbout(card.preview, sceneScale, cx, cy);
-                preview.l += 1.0f;
-                preview.t += 1.0f;
-                preview.r -= 1.0f;
-                preview.b -= 1.0f;
-                thumbSources.push_back(source);
-                thumbRects.push_back(preview);
+                if (inset)
+                {
+                    preview.l += 1.0f;
+                    preview.t += 1.0f;
+                    preview.r -= 1.0f;
+                    preview.b -= 1.0f;
+                }
+                sources.push_back(source);
+                rects.push_back(preview);
             }
         };
-        addThumbnails(g_cards);
-        addThumbnails(g_dockCards);
+
+        if (!UsesWindowChips())
+        {
+            addThumbnails(g_cards, overlaySources, overlayRects, true);
+            addThumbnails(g_dockCards, overlaySources, overlayRects, true);
+        }
+        else if (g_windowChipContent == WindowChipContent::Preview)
+        {
+            addThumbnails(g_cards, chipSources, chipRects, false);
+            addThumbnails(g_dockCards, chipSources, chipRects, false);
+        }
     }
-    SyncThumbnails(thumbSources, thumbRects, contentAlpha);
+    SyncThumbnails(overlaySources, overlayRects, contentAlpha);
 
     g_d2dTarget->BeginDraw();
     g_d2dTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
@@ -4074,7 +4818,8 @@ static void RenderScene(HDC dc)
     for (int i = 0; i < static_cast<int>(g_cards.size()); i++)
     {
         const CardView view = scaledCard(g_cards[i]);
-        const bool isSelected = !g_focusStrip && g_cards[i].filtered == g_selected;
+        const bool isSelected = !g_focusStrip && !g_focusDock &&
+                                g_cards[i].filtered == g_selected;
         const bool isHovered = g_hoverCard == i;
         const bool closeHovered = g_hoverClose == i;
         if (UsesWindowChips())
@@ -4087,21 +4832,23 @@ static void RenderScene(HDC dc)
     // windows look identical whether they stay inline or move to the side.
     if (!g_dockCards.empty())
     {
-        FillRound(g_dockArea, 14.0f * s, g_theme.stripFill, 0.78f);
-        StrokeRound(g_dockArea, 14.0f * s, g_theme.text, 1.0f * s, 0.08f);
+        if (g_heldDockBackground)
+        {
+            FillRound(g_dockArea, 14.0f * s, g_theme.stripFill, 0.78f);
+            StrokeRound(g_dockArea, 14.0f * s, g_theme.text, 1.0f * s, 0.08f);
+        }
         const RectF dockLabel = {g_dockArea.l + 12.0f * s,
                                  g_dockArea.t + 6.0f * s,
                                  g_dockArea.r - 12.0f * s,
                                  g_dockArea.t + 28.0f * s};
-        DrawTextBlock(L"Held", g_fmtHint, dockLabel, g_theme.text,
-                      DWRITE_TEXT_ALIGNMENT_LEADING, 0.55f);
+        DrawTextBlock(L"Held", g_fmtHint, dockLabel,
+                      g_focusDock ? g_theme.accent : g_theme.text,
+                      DWRITE_TEXT_ALIGNMENT_LEADING, g_focusDock ? 0.95f : 0.55f);
 
         for (int i = 0; i < static_cast<int>(g_dockCards.size()); i++)
         {
             const CardView view = scaledCard(g_dockCards[i]);
-            const bool isSelected = !g_focusStrip &&
-                                    g_dockCards[i].filtered >= 0 &&
-                                    g_dockCards[i].filtered == g_selected;
+            const bool isSelected = g_focusDock && i == g_dockSelected;
             const bool isHovered = g_hoverDock == i;
             const bool closeHovered = g_hoverDockClose == i;
             if (UsesWindowChips())
@@ -4156,6 +4903,8 @@ static void RenderScene(HDC dc)
     {
         const int i = drawOrder[order];
         const PillView& pill = g_pills[i];
+        if (CardAnimationHidesDesktop(pill.desktop))
+            continue;
         const bool active = pill.desktop == g_currentDesktop;
         const bool hovered = g_hoverPill == i;
         const bool selected = g_focusStrip && pill.desktop == g_desktopSelected;
@@ -4295,6 +5044,8 @@ static void RenderScene(HDC dc)
                               1.6f * s);
     }
 
+    DrawCardAnimation();
+
     // Hint line.
     const RectF hintRect = {56.0f * s, g_layout.strip.b + 10.0f * s,
                             g_layout.w - 56.0f * s, g_layout.strip.b + 34.0f * s};
@@ -4305,12 +5056,17 @@ static void RenderScene(HDC dc)
         hint = L"Move to desktop 1\u2013" +
                std::to_wstring(std::max<size_t>(g_desktops.size(), 1)) +
                L"  \u00B7  Esc cancel";
+    else if (g_focusDock)
+        hint = L"Enter switch  \u00B7  U release  \u00B7  Delete close  \u00B7  "
+               L"Up/Down select  \u00B7  Tab desktops";
     else if (g_focusStrip)
         hint = L"Enter switch  \u00B7  F2 rename  \u00B7  N new  \u00B7  Delete close  "
                L"\u00B7  Ctrl+Left/Right switch  \u00B7  Tab windows";
     else
         hint = L"Enter switch  \u00B7  Delete close  \u00B7  1-9 desktop  \u00B7  "
-               L"Shift+1-9 move  \u00B7  U hold  \u00B7  Tab desktops  \u00B7  / search";
+               L"Shift+1-9 move  \u00B7  U hold  \u00B7  "
+               + std::wstring(DockExists() ? L"Tab dock/desktops" : L"Tab desktops")
+               + L"  \u00B7  / search";
     if (g_showHints)
         DrawTextBlock(hint, g_fmtHint, hintRect, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_LEADING, 0.42f);
@@ -4341,6 +5097,40 @@ static void RenderScene(HDC dc)
 
     if (g_d2dTarget->EndDraw() == static_cast<HRESULT>(0x8899000C))  // D2DERR_RECREATE_TARGET
         ReleaseDeviceResources();
+
+    // The chip thumbnail host and mask sit above the overlay. They are shown
+    // only once the open animation is essentially complete, so the square
+    // thumbnail corners never peek through during the fade.
+    const bool showChipLayers =
+        UsesWindowChips() && g_windowChipContent == WindowChipContent::Preview &&
+        !g_busy && contentAlpha > 0.98f && !chipSources.empty();
+    if (showChipLayers)
+    {
+        SetChipLayersVisible(true);
+        SyncChipThumbnails(chipSources, chipRects, contentAlpha);
+        UpdateChipHostRegion(chipRects);
+        if (RenderChipMask(sceneScale, cx, cy))
+        {
+            // Keep the host directly below the mask and both above the overlay.
+            // The overlay is activated by input, which can otherwise reorder the
+            // topmost group and hide the live thumbnail behind the chip fill.
+            SetWindowPos(g_thumbHost, g_chipMask, g_monitorX, g_monitorY,
+                         g_monitorW, g_monitorH,
+                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            SetWindowPos(g_chipMask, HWND_TOPMOST, g_monitorX, g_monitorY,
+                         g_monitorW, g_monitorH,
+                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        }
+        else
+        {
+            // Never leave a stale mask above newly positioned thumbnails.
+            SetChipLayersVisible(false);
+        }
+    }
+    else
+    {
+        SetChipLayersVisible(false);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4589,6 +5379,8 @@ static void ShowOverlay()
     g_selected = 0;
     g_page = 0;
     g_focusStrip = false;
+    g_focusDock = false;
+    g_dockSelected = 0;
     g_search.clear();
     g_searchFocused = false;
     g_searchSelectAll = false;
@@ -4628,6 +5420,7 @@ static void ShowOverlay()
 
 static void FinishHide()
 {
+    SetChipLayersVisible(false);
     ReleaseThumbnails();
     StopOverlayTimers();
     if (g_overlay)
@@ -4637,8 +5430,10 @@ static void FinishHide()
     g_targetPresence = 0.0f;
     g_busy = false;
     g_pendingMove = false;
+    g_focusDock = false;
     g_pendingDesktopTarget = -1;
     g_pendingDesktopTries = 0;
+    ClearCardAnimation();
     SetControlReady(true);
 }
 
@@ -4718,11 +5513,19 @@ static void CloseWindowEntry(int entry)
     PostMessageW(target, WM_CLOSE, 0, 0);
 
     // Remove the entry immediately and keep the overlay open.
+    SetChipLayersVisible(false);
     ReleaseThumbnails();
     g_windows.erase(g_windows.begin() + entry);
     RebuildFilter();
     if (g_selected >= static_cast<int>(g_filtered.size()))
         g_selected = g_filtered.empty() ? -1 : static_cast<int>(g_filtered.size()) - 1;
+    // The dock list is rebuilt on the next layout; drop the cursor now so it
+    // cannot act on the entry that was just removed.
+    if (g_focusDock)
+    {
+        g_focusDock = false;
+        g_dockSelected = 0;
+    }
     g_hoverCard = g_hoverClose = g_hoverDock = g_hoverDockClose = -1;
 
     if (g_overlay)
@@ -4794,6 +5597,7 @@ static void FocusSearch()
     // character replaces the old query instead of appending to it.
     g_searchSelectAll = !g_search.empty();
     g_focusStrip = false;
+    g_focusDock = false;
     if (g_overlay)
         SetTimer(g_overlay, kTimerCaret, 530, nullptr);
     InvalidateRect(g_overlay, nullptr, FALSE);
@@ -4891,6 +5695,7 @@ static void OnLeftClick(int x, int y)
         g_searchSelectAll = false;
         InvalidateRect(g_overlay, nullptr, FALSE);
     }
+    g_focusDock = false;
 
     for (int i = 0; i < static_cast<int>(g_cards.size()); i++)
     {
@@ -4933,6 +5738,7 @@ static void OnLeftClick(int x, int y)
             return;
         }
 
+        g_focusDock = false;
         g_focusStrip = true;
         g_desktopSelected = pill.desktop;
         if (pill.desktop != g_currentDesktop)
@@ -4950,6 +5756,91 @@ static void OnLeftClick(int x, int y)
         BeginDesktopAction(-1, true, false);
         return;
     }
+}
+
+static bool DockExists()
+{
+    return !g_dockCards.empty();
+}
+
+static void MoveDockSelection(int delta)
+{
+    const int count = static_cast<int>(g_dockCards.size());
+    if (count <= 0)
+    {
+        g_focusDock = false;
+        g_dockSelected = 0;
+        InvalidateRect(g_overlay, nullptr, FALSE);
+        return;
+    }
+
+    int next = g_dockSelected + delta;
+    if (g_wrapNavigation)
+        next = ((next % count) + count) % count;
+    else
+        next = std::max(0, std::min(count - 1, next));
+    if (next == g_dockSelected)
+        return;
+
+    g_dockSelected = next;
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
+static void ActivateDockSelection()
+{
+    if (!g_focusDock || g_dockSelected < 0 ||
+        g_dockSelected >= static_cast<int>(g_dockCards.size()))
+        return;
+    ActivateWindowEntry(g_dockCards[g_dockSelected].entry);
+}
+
+static void CloseDockSelection()
+{
+    if (!g_focusDock || g_dockSelected < 0 ||
+        g_dockSelected >= static_cast<int>(g_dockCards.size()))
+        return;
+    CloseWindowEntry(g_dockCards[g_dockSelected].entry);
+}
+
+// Tab cycles grid -> held dock -> desktop strip -> grid. The dock stage is
+// skipped when no held windows are docked, which keeps the original two-stage
+// behaviour for users who leave the dock off.
+static void CycleFocus()
+{
+    if (DockExists())
+    {
+        if (!g_focusStrip && !g_focusDock)
+        {
+            g_focusDock = true;
+            g_focusStrip = false;
+            g_dockSelected = std::max(
+                0, std::min(g_dockSelected,
+                            static_cast<int>(g_dockCards.size()) - 1));
+        }
+        else if (g_focusDock)
+        {
+            g_focusDock = false;
+            g_focusStrip = true;
+            g_desktopSelected = g_currentDesktop;
+        }
+        else
+        {
+            g_focusStrip = false;
+            g_focusDock = false;
+            if (g_selected < 0 && !g_display.empty())
+                g_selected = g_display.front();
+        }
+    }
+    else
+    {
+        g_focusDock = false;
+        g_focusStrip = !g_focusStrip;
+        if (g_focusStrip)
+            g_desktopSelected = g_currentDesktop;
+    }
+
+    KickCarousel();
+    InvalidateRect(g_overlay, nullptr, FALSE);
 }
 
 static void MoveStripSelection(int delta)
@@ -5071,7 +5962,12 @@ static void OnKeyDown(WPARAM key)
     switch (key)
     {
     case VK_ESCAPE:
-        if (g_searchFocused || !g_search.empty())
+        if (g_focusDock)
+        {
+            g_focusDock = false;
+            InvalidateRect(g_overlay, nullptr, FALSE);
+        }
+        else if (g_searchFocused || !g_search.empty())
         {
             SetSearch(L"");
             g_searchFocused = false;
@@ -5091,6 +5987,10 @@ static void OnKeyDown(WPARAM key)
             else
                 HideOverlay(false);
         }
+        else if (g_focusDock)
+        {
+            ActivateDockSelection();
+        }
         else
         {
             ActivateEntry(g_selected);
@@ -5100,6 +6000,8 @@ static void OnKeyDown(WPARAM key)
     case VK_DELETE:
         if (g_focusStrip)
             BeginDesktopAction(-1, false, true);
+        else if (g_focusDock)
+            CloseDockSelection();
         else
             CloseEntry(g_selected);
         return;
@@ -5109,11 +6011,7 @@ static void OnKeyDown(WPARAM key)
         return;
 
     case VK_TAB:
-        g_focusStrip = !g_focusStrip;
-        if (g_focusStrip)
-            g_desktopSelected = g_currentDesktop;
-        KickCarousel();
-        InvalidateRect(g_overlay, nullptr, FALSE);
+        CycleFocus();
         return;
 
     case VK_BACK:
@@ -5136,6 +6034,10 @@ static void OnKeyDown(WPARAM key)
         {
             MoveStripSelection(-1);
         }
+        else if (g_focusDock)
+        {
+            MoveDockSelection(-1);
+        }
         else
         {
             MoveSelection(-1, 0);
@@ -5157,6 +6059,10 @@ static void OnKeyDown(WPARAM key)
         {
             MoveStripSelection(1);
         }
+        else if (g_focusDock)
+        {
+            MoveDockSelection(1);
+        }
         else
         {
             MoveSelection(1, 0);
@@ -5164,12 +6070,16 @@ static void OnKeyDown(WPARAM key)
         return;
 
     case VK_UP:
-        if (!g_focusStrip)
+        if (g_focusDock)
+            MoveDockSelection(-1);
+        else if (!g_focusStrip)
             MoveSelection(0, -1);
         return;
 
     case VK_DOWN:
-        if (!g_focusStrip)
+        if (g_focusDock)
+            MoveDockSelection(1);
+        else if (!g_focusStrip)
             MoveSelection(0, 1);
         return;
 
@@ -5192,8 +6102,15 @@ static void OnKeyDown(WPARAM key)
     case 'U':
         if (!g_focusStrip)
         {
-            if (g_hoverDock >= 0 &&
-                g_hoverDock < static_cast<int>(g_dockCards.size()))
+            if (g_focusDock && g_dockSelected >= 0 &&
+                g_dockSelected < static_cast<int>(g_dockCards.size()))
+            {
+                const int entry = g_dockCards[g_dockSelected].entry;
+                if (entry >= 0 && entry < static_cast<int>(g_windows.size()))
+                    ToggleHoldWindow(g_windows[entry].hwnd);
+            }
+            else if (g_hoverDock >= 0 &&
+                     g_hoverDock < static_cast<int>(g_dockCards.size()))
             {
                 const int entry = g_dockCards[g_hoverDock].entry;
                 if (entry >= 0 && entry < static_cast<int>(g_windows.size()))
@@ -5221,6 +6138,53 @@ static void OnKeyDown(WPARAM key)
 
 ////////////////////////////////////////////////////////////////////////////////
 // WINDOW PROCEDURES
+
+static LRESULT CALLBACK ChipLayerWndProc(HWND hwnd, UINT message, WPARAM wParam,
+                                         LPARAM lParam)
+{
+    switch (message)
+    {
+    case WM_NCHITTEST:
+        return HTTRANSPARENT;
+
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+
+    case WM_ERASEBKGND:
+        if (hwnd == g_thumbHost && wParam)
+        {
+            RECT rc = {};
+            GetClientRect(hwnd, &rc);
+            FillRect(reinterpret_cast<HDC>(wParam), &rc,
+                     reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+        }
+        return 1;
+
+    case WM_PAINT:
+        if (hwnd == g_thumbHost)
+        {
+            PAINTSTRUCT ps = {};
+            HDC dc = BeginPaint(hwnd, &ps);
+            RECT rc = {};
+            GetClientRect(hwnd, &rc);
+            FillRect(dc, &rc,
+                     reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+            EndPaint(hwnd, &ps);
+        }
+        else
+        {
+            // The layered mask is painted with UpdateLayeredWindow(), but the
+            // update region still has to be validated or WM_PAINT repeats.
+            PAINTSTRUCT ps = {};
+            BeginPaint(hwnd, &ps);
+            EndPaint(hwnd, &ps);
+        }
+        return 0;
+
+    default:
+        return DefWindowProcW(hwnd, message, wParam, lParam);
+    }
+}
 
 static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                                        LPARAM lParam)
@@ -5443,25 +6407,35 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             case L'h':
                 if (g_focusStrip)
                     MoveStripSelection(-1);
+                else if (g_focusDock)
+                    MoveDockSelection(-1);
                 else
                     MoveSelection(-1, 0);
                 return 0;
             case L'l':
                 if (g_focusStrip)
                     MoveStripSelection(1);
+                else if (g_focusDock)
+                    MoveDockSelection(1);
                 else
                     MoveSelection(1, 0);
                 return 0;
             case L'j':
-                if (!g_focusStrip)
+                if (g_focusDock)
+                    MoveDockSelection(1);
+                else if (!g_focusStrip)
                     MoveSelection(0, 1);
                 return 0;
             case L'k':
-                if (!g_focusStrip)
+                if (g_focusDock)
+                    MoveDockSelection(-1);
+                else if (!g_focusStrip)
                     MoveSelection(0, -1);
                 return 0;
             case L'x':
-                if (!g_focusStrip)
+                if (g_focusDock)
+                    CloseDockSelection();
+                else if (!g_focusStrip)
                     CloseEntry(g_selected);
                 return 0;
             default:
@@ -5484,6 +6458,9 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 
     case WM_DISPLAYCHANGE:
     case 0x02E0:  // WM_DPICHANGED
+        SetChipLayersVisible(false);
+        ReleaseDeviceResources();
+        ReleaseChipMaskSurface();
         UpdateMonitorForWindow(g_originWindow);
         SetWindowPos(g_overlay, HWND_TOPMOST, g_monitorX, g_monitorY, g_monitorW,
                      g_monitorH, SWP_NOACTIVATE);
@@ -5514,7 +6491,15 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 return 0;
             }
 
-            if (g_presence >= 1.0f && !g_busy)
+            if (g_cardAnim.mode != CardAnimationMode::None &&
+                now - g_cardAnim.start >=
+                    static_cast<ULONGLONG>(g_cardAnim.duration * 1000.0f))
+                ClearCardAnimation();
+            if (g_pendingDrawCard && now - g_pendingDrawTick > 4000)
+                g_pendingDrawCard = false;
+
+            if (g_presence >= 1.0f && !g_busy &&
+                g_cardAnim.mode == CardAnimationMode::None && !g_pendingDrawCard)
                 KillTimer(hwnd, kTimerFrame);
 
             InvalidateRect(hwnd, nullptr, FALSE);
@@ -5683,6 +6668,14 @@ static bool RegisterWindowClasses()
     if (!RegisterClassExW(&controlClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
         return false;
 
+    WNDCLASSEXW chipClass = {sizeof(chipClass)};
+    chipClass.lpfnWndProc = ChipLayerWndProc;
+    chipClass.hInstance = g_hModule;
+    chipClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    chipClass.lpszClassName = kChipLayerClass;
+    if (!RegisterClassExW(&chipClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+        return false;
+
     return true;
 }
 
@@ -5690,6 +6683,7 @@ static void UnregisterWindowClasses()
 {
     UnregisterClassW(kOverlayClass, g_hModule);
     UnregisterClassW(kControlClass, g_hModule);
+    UnregisterClassW(kChipLayerClass, g_hModule);
 }
 
 static bool InitializeUi()
@@ -5716,6 +6710,24 @@ static bool InitializeUi()
         return false;
     }
 
+    // Top-level thumbnail host for window chips. The region is set per frame to
+    // the union of the preview squares; the layered mask above it hides the
+    // square corners.
+    g_thumbHost = CreateWindowExW(
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
+        kChipLayerClass, L"", WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, g_hModule,
+        nullptr);
+    if (!g_thumbHost)
+        Wh_Log(L"Window-chip thumbnail host creation failed: %lu", GetLastError());
+
+    g_chipMask = CreateWindowExW(
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT |
+            WS_EX_NOACTIVATE | WS_EX_LAYERED,
+        kChipLayerClass, L"", WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, g_hModule,
+        nullptr);
+    if (!g_chipMask)
+        Wh_Log(L"Window-chip mask creation failed: %lu", GetLastError());
+
     g_control = CreateWindowExW(0, kControlClass, kControlTitleIdle, 0, 0, 0, 0, 0,
                                 HWND_MESSAGE, nullptr, g_hModule, nullptr);
     if (!g_control)
@@ -5739,15 +6751,27 @@ static bool InitializeUi()
 
 static void ShutdownUi()
 {
+    SetChipLayersVisible(false);
     ReleaseThumbnails();
     StopOverlayTimers();
     ReleaseGraphics();
+    ReleaseChipMaskSurface();
 
     if (g_control)
     {
         SetWindowTextW(g_control, kControlTitleIdle);
         DestroyWindow(g_control);
         g_control = nullptr;
+    }
+    if (g_chipMask)
+    {
+        DestroyWindow(g_chipMask);
+        g_chipMask = nullptr;
+    }
+    if (g_thumbHost)
+    {
+        DestroyWindow(g_thumbHost);
+        g_thumbHost = nullptr;
     }
     if (g_overlay)
     {
@@ -5808,6 +6832,8 @@ static DWORD WINAPI UiThreadProc(LPVOID)
                 g_createPull = 0.0f;
                 if (g_overlay && GetCapture() == g_overlay)
                     ReleaseCapture();
+                if (!g_cardAnimations || !UsesCards())
+                    ClearCardAnimation();
                 // The accent blur only takes effect while the overlay is hidden
                 // (see ApplyBackdrop), so re-applying it to a visible overlay
                 // would leave the flat fill behind it. It is applied on the next

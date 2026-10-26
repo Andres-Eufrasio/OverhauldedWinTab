@@ -81,16 +81,38 @@ Window previews are real DWM thumbnails:
   framed inside the card and window chrome (title, close button) lives in the
   card header, never over the preview.
 
-When `Appearance.WindowTabs` is `chips`, the same thumbnail is placed in a
-centered square inside a circular chip. The square is intentional: DWM
-thumbnails cannot be clipped to a circle, so a round preview would show square
-corners over the rim. `WindowChipContent` can replace the thumbnail with a large
-application icon or with no center content at all. The title is drawn one
-character at a time along the top arc by `DrawArcText()`: each character is
-measured with `MeasureTextWidth()`, positioned on the arc, and rotated by
-`DrawRotatedTextBlock()`. The chip itself is drawn with an outer disc, a lighter
-inner ring, twelve white edge spots, a darker center disc, and a contrast-aware
-title color from `ChipTextColor()`.
+When `Appearance.WindowTabs` is `chips`, the same thumbnail is clipped to a
+circle inside the chip. DWM thumbnails are composed above normal window content
+and are not clipped by `SetWindowRgn`, so a window region cannot round them off.
+The renderer therefore uses two extra top-level windows:
+
+- `g_thumbHost` is a top-level thumbnail destination with a region equal to the
+  union of the preview squares. It owns the `DwmRegisterThumbnail` handles for
+  the visible chips and paints a black background; DWM composes the live
+  thumbnail above that background.
+- `g_chipMask` is a full-screen layered window above the host. Its Direct2D scene
+  is rendered into a top-down 32-bpp DIB and presented with
+  `UpdateLayeredWindow()`. The mask paints each chip foreground as a donut with
+  a transparent circular hole over the preview. The opaque ring hides the square
+  thumbnail corners and the hole reveals only the circular centre.
+
+Both helper windows are `WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT |
+WS_EX_NOACTIVATE` and return `HTTRANSPARENT` from `WM_NCHITTEST`, so input still
+reaches the overlay. They are shown only when the open animation is essentially
+complete, which avoids square corners peeking through during the fade, and they
+are hidden while the overlay is busy or closing. `WindowChipContent` can replace
+the thumbnail with a large application icon or with no center content at all.
+The title is drawn one character at a time along the top arc by `DrawArcText()`:
+each character is measured with `MeasureTextWidth()`, positioned on the arc, and
+rotated by `DrawRotatedTextBlock()`. The title radius keeps the text on the rim
+ring, outside the circular preview. The chip itself is drawn with an outer disc,
+a lighter inner ring, twelve white edge spots, a darker center disc, and a
+contrast-aware title color from `ChipTextColor()`.
+
+`Appearance.WindowChipSize` scales `maxCardW` and the dock width, so the grid,
+the dock and the circular preview all grow together. The internal
+`WindowTabs` value remains `cards` for settings compatibility, but the UI calls
+that style **Squares**.
 
 The panel background is a translucent scrim over DWM glass
 (`DwmExtendFrameIntoClientArea` with `-1` margins). The scrim color and alpha are
@@ -240,7 +262,8 @@ State is intentionally small:
   `CardView::hit` keeps the unlifted area while `rect` follows the lift; hover
   tests both, so neither edge flickers when the visual card moves under the
   pointer.
-- `Tab` toggles focus between the grid and the desktop strip.
+- `Tab` cycles focus between the grid, the held dock (when it has items) and
+  the desktop strip.
 - `UpdateLayout` computes both the scene geometry and the per-card / per-pill hit
   rectangles in physical pixels, so mouse hit testing and rendering always agree.
 - `Appearance.DesktopSelection` is resolved in `RebuildPills()`: `lift` raises
@@ -270,9 +293,9 @@ which makes the next typed character replace the query. With
 the hint line.
 
 `Appearance.DesktopStrip` selects the strip layout: `flat` or `carousel`.
-The legacy `cards` value is still accepted and maps to the carousel with the
-playing-card tab style. `Appearance.StripTabs` selects the tab shape: `pill`,
-`chip` or `cards`. `UsesChips()` and `UsesCards()` resolve the tab style, and
+`Appearance.StripTabs` selects the tab shape: `pill`, `chip` or `cards`. The old
+`DesktopStrip=cards` value was removed; `StripTabs` is the single source of
+truth for the tab shape. `UsesChips()` and `UsesCards()` resolve the tab style, and
 `IsWheel()` marks the carousel layout. In carousel mode every tab is placed by
 its wrapped distance `d` from `g_carouselPos`, with `scale = 1 - 0.18|d|`, a
 `4.5d` degree tilt, a small vertical arc and an alpha fade. `DrawChipTab` paints
@@ -289,15 +312,24 @@ uses a fixed 160 x 224 card multiplied by `Appearance.CardSize`
 cards on the wheel; the flat row shrinks them if the row cannot fit. The create
 button becomes a face-down card: `DrawCreateCard` paints a vector card back with
 a double gold frame, a clipped diagonal lattice with diamond pips, an oval
-medallion and ornament ring, a centered plus and a `New desktop` banner, and
+medallion and ornament ring, and a `New desktop` banner. The old centered plus
+was removed so the back reads as a card rather than an add button.
 `WM_LBUTTONDOWN`/`WM_MOUSEMOVE`/`WM_LBUTTONUP` turn a downward pull into the same
 create action as a click. `DrawDesktopCard` paints the ivory face,
 corner rank and suit (rotated 180 degrees in the bottom corner), a large suit
 pip, and the desktop name; the suit is `desktop & 3`, so desktops cycle through
-spades, hearts, diamonds and clubs. `Appearance.StripBackground` controls the
-panel: `Auto` keeps it in the flat row and hides it for the carousel,
-`StripBackgroundVisible()` resolves the three modes, and floating tabs get a
-soft drop shadow. `kTimerCarousel` eases `g_carouselPos` towards `StripTarget()`
+spades, hearts, diamonds and clubs. `Appearance.CardAnimations` adds two ghost
+cards drawn by `DrawCardAnimation()`: creating a desktop starts a draw from the
+create deck to the new tab once the desktop appears, and closing one starts a
+throw from the current tab off the right edge. The ghost stores its own rank,
+suit and name so it can outlive the desktop it represents. A draw follows the
+new tab while the carousel turns, so the card lands on the tab's final position;
+the real tab is hidden until the ghost lands. Both animations use
+`AnimationSeconds()`, so `Appearance.AnimationSpeed` controls them.
+`Appearance.StripBackground` controls the panel: `Auto` keeps it in the flat row
+and hides it for the carousel, `StripBackgroundVisible()` resolves the three
+modes, and floating tabs get a soft drop shadow. `kTimerCarousel` eases
+`g_carouselPos` towards `StripTarget()`
 (strip selection, pending desktop switch, or active desktop) by the shortest
 route around the wheel, and `KickCarousel()` restarts the timer when the target
 changes. Rendering sorts visible tabs farthest-first and applies a
@@ -306,13 +338,21 @@ bounding box and prefers the tab closest to the centre.
 
 `Appearance.WindowTabs` selects `DrawWindowCard()` or `DrawWindowChip()` for
 grid and dock items. `Appearance.WindowChipContent` selects the live DWM
-thumbnail, a large app icon or a name-only center. DWM thumbnails are skipped
-when the chip content is icon or blank, because the center does not show a
-preview. `DrawArcText()` lays the title on the top rim and trims it with an ellipsis
-when it exceeds the 150-degree arc. Hover and close rectangles are tracked
-separately for the grid (`g_hoverCard` / `g_hoverClose`) and the dock
+thumbnail, a large app icon or a name-only center. The circular thumbnail path
+uses `g_thumbHost` / `g_chipMask`; thumbnails are skipped when the chip content is
+icon or blank, because the center does not show a preview. `DrawWindowChip()`
+takes a `mask` flag: in mask mode it skips the shadow and preview fill, draws the
+chip surface as donuts with a transparent hole at `card.preview`, and still
+paints the title, selection ring, held dot and close affordance. The mask scene is
+rendered after the overlay scene into `g_maskDC`, then presented with
+`UpdateLayeredWindow()`. `DrawArcText()` lays the title on the top rim and trims
+it with an ellipsis when it exceeds the 150-degree arc. Hover and close rectangles
+are tracked separately for the grid (`g_hoverCard` / `g_hoverClose`) and the dock
 (`g_hoverDock` / `g_hoverDockClose`), and `OnLeftClick()` uses the stable
 `CardView::entry` for dock activation and closing.
+
+`Appearance.HeldDockBackground` toggles only the dock panel fill and stroke; the
+dock label and items stay visible either way.
 
 `Behavior.WrapDesktopStrip` controls `MoveStripSelection()`, the shared handler
 for `Left`/`Right` and `h`/`l` while the strip has focus. With it on, the
@@ -332,10 +372,18 @@ switches desktops and `Shift` + `Left`/`Right` moves the selected window to an
 adjacent desktop. Bare `1`-`9` jump to that desktop and `Shift` + `1`-`9` move
 the selected window there; `M` also sets `g_pendingMove`, after which the next
 `1`-`9` moves the selected window and any other key cancels. `U` toggles the
-hold on the selected window, or on the held dock item under the pointer, and held
-cards are framed in their hold colour. With the dock enabled, held windows are
-removed from `g_display`, so releasing one uses hover plus `U` rather than grid
-navigation.
+hold on the selected window, on the keyboard-selected dock item, or on the held
+dock item under the pointer, and held cards are framed in their hold colour.
+
+The held dock is a third keyboard stage. `CycleFocus()` implements `Tab` as
+grid -> dock -> strip -> grid, skipping the dock when `g_dockCards` is empty.
+`g_focusDock` and `g_dockSelected` drive a separate cursor; `SelectedWindow()`
+returns the dock item while that cursor is active, so `U`, `M`, `Shift`+arrows
+and the close action operate on the dock without changing the grid selection.
+`MoveDockSelection()` wraps or clamps according to `Behavior.WrapNavigation`.
+`Enter` activates, `Delete` closes, `U` releases, and `Esc` leaves the dock. With
+the dock enabled, held windows are removed from `g_display`, so they are not part
+of the grid page; the dock cursor is the keyboard route to them.
 
 Activating a window hides the overlay immediately (no reverse animation) and
 then restores and foregrounds the target. Closing a window posts `WM_CLOSE`,
