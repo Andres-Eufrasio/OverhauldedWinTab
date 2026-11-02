@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.8.5
+// @version         0.8.6
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -2575,6 +2575,25 @@ static UINT32 ClassicChipColor(int index)
 // cycle so several chips remain distinguishable.
 static UINT32 ChipColorForIndex(int index)
 {
+    if (g_cardTheme != L"default")
+    {
+        static const UINT32 yugioh[] = {0xFF171A3A, 0xFFB08D2C,
+                                         0xFF6B1E2B, 0xFF2E4E8A};
+        static const UINT32 pokemon[] = {0xFFD62828, 0xFF2D6CDF,
+                                          0xFFF0B429, 0xFF3A8D5D};
+        static const UINT32 kakegurui[] = {0xFF171717, 0xFF8E1B2A,
+                                            0xFFD4AF37, 0xFF5A0F1B};
+        const UINT32* colors = g_cardTheme == L"yugioh" ? yugioh
+                             : g_cardTheme == L"pokemon" ? pokemon
+                                                          : kakegurui;
+        const size_t count = g_cardTheme == L"yugioh"
+                                 ? ARRAYSIZE(yugioh)
+                                 : g_cardTheme == L"pokemon"
+                                       ? ARRAYSIZE(pokemon)
+                                       : ARRAYSIZE(kakegurui);
+        return colors[static_cast<size_t>(index) % count];
+    }
+
     switch (g_chipColorMode)
     {
     case ChipColorMode::Single:
@@ -2587,33 +2606,6 @@ static UINT32 ChipColorForIndex(int index)
         return ClassicChipColor(index);
     case ChipColorMode::Theme:
     default:
-        if (g_cardTheme != L"default")
-        {
-            static const UINT32 yugioh[] = {0xFF171A3A, 0xFFB08D2C,
-                                             0xFF6B1E2B, 0xFF2E4E8A};
-            static const UINT32 pokemon[] = {0xFFD62828, 0xFF2D6CDF,
-                                              0xFFF0B429, 0xFF3A8D5D};
-            static const UINT32 kakegurui[] = {0xFF171717, 0xFF8E1B2A,
-                                                0xFFD4AF37, 0xFF5A0F1B};
-            const UINT32* colors = nullptr;
-            size_t count = 0;
-            if (g_cardTheme == L"yugioh")
-            {
-                colors = yugioh;
-                count = ARRAYSIZE(yugioh);
-            }
-            else if (g_cardTheme == L"pokemon")
-            {
-                colors = pokemon;
-                count = ARRAYSIZE(pokemon);
-            }
-            else
-            {
-                colors = kakegurui;
-                count = ARRAYSIZE(kakegurui);
-            }
-            return colors[static_cast<size_t>(index) % count];
-        }
         return g_themeChipColors.empty()
                    ? g_theme.accent
                    : g_themeChipColors[static_cast<size_t>(index) %
@@ -3992,9 +3984,27 @@ static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
         }
     }
 
-    const UINT32 faceColor = 0xFFF8F5EC;
-    const UINT32 ink = 0xFF1C1B20;
-    const UINT32 red = 0xFFC62828;
+    UINT32 faceColor = 0xFFF8F5EC;
+    UINT32 ink = 0xFF1C1B20;
+    UINT32 red = 0xFFC62828;
+    if (g_cardTheme == L"yugioh")
+    {
+        faceColor = 0xFF20234F;
+        ink = 0xFFF0C75E;
+        red = 0xFFE06C75;
+    }
+    else if (g_cardTheme == L"pokemon")
+    {
+        faceColor = 0xFFFFF3D0;
+        ink = 0xFF2453A6;
+        red = 0xFFD62828;
+    }
+    else if (g_cardTheme == L"kakegurui")
+    {
+        faceColor = 0xFF241B24;
+        ink = 0xFFD4AF37;
+        red = 0xFFC33A4A;
+    }
     const int suit = pill.desktop & 3;
     const UINT32 suitColor = (suit == 1 || suit == 2) ? red : ink;
     const WCHAR* glyph = suit == 0 ? L"\u2660"
@@ -4134,14 +4144,31 @@ static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
     const float lift = pull * 16.0f * s;
     const RectF card = {rect.l, rect.t + lift, rect.r, rect.b + lift};
     const float radius = 12.0f * s;
-    const UINT32 gold = MixColor(0xFFD8B45A, g_theme.accent, 0.18f);
+    UINT32 themeBack = g_theme.pillFill;
+    UINT32 themeGold = 0xFFD8B45A;
+    if (g_cardTheme == L"yugioh")
+    {
+        themeBack = 0xFF171A3A;
+        themeGold = 0xFFB08D2C;
+    }
+    else if (g_cardTheme == L"pokemon")
+    {
+        themeBack = 0xFF2D6CDF;
+        themeGold = 0xFFF0B429;
+    }
+    else if (g_cardTheme == L"kakegurui")
+    {
+        themeBack = 0xFF171717;
+        themeGold = 0xFFD4AF37;
+    }
+    const UINT32 gold = MixColor(themeGold, g_theme.accent, 0.18f);
 
     const RectF shadow = {card.l, card.t + 8.0f * s, card.r,
                           card.b + 14.0f * s};
     FillRound(shadow, radius + 2.0f * s, 0xFF000000, 0.34f + 0.18f * pull);
 
     const UINT32 back =
-        MixColor(g_theme.pillFill, g_theme.accent, hovered ? 0.30f : 0.20f);
+        MixColor(themeBack, g_theme.accent, hovered ? 0.30f : 0.20f);
     const UINT32 panel = MixColor(back, 0xFF000000, 0.18f);
     FillRound(card, radius, back, 1.0f);
     ID2D1Bitmap* customBack = EnsureCardBackBitmap();
@@ -4205,6 +4232,60 @@ static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
     }
     g_d2dTarget->SetTransform(saved);
     g_d2dTarget->PopAxisAlignedClip();
+
+    if (!g_tuckCards && g_cardTheme != L"default")
+    {
+        const float motifCx = (card.l + card.r) / 2.0f;
+        const float motifCy = (card.t + card.b) / 2.0f - 6.0f * s;
+        const float motifRx = card.W() * 0.27f;
+        const float motifRy = card.H() * 0.31f;
+        if (g_cardTheme == L"pokemon")
+        {
+            // A simple vector red/white capture-ball motif, without bundled
+            // character artwork.
+            FillEllipse(motifCx, motifCy, motifRx, motifRy, 0xFFF8F5EC, 0.96f);
+            FillEllipse(motifCx, motifCy - motifRy * 0.48f, motifRx,
+                        motifRy * 0.52f, 0xFFD62828, 0.90f);
+            g_d2dBrush->SetColor(ColorOf(0xFF1C1B20, 0.90f));
+            g_d2dTarget->DrawLine(
+                D2D1::Point2F(motifCx - motifRx, motifCy),
+                D2D1::Point2F(motifCx + motifRx, motifCy), g_d2dBrush, 2.0f * s);
+            StrokeEllipse(motifCx, motifCy, motifRx, motifRy, 0xFF2453A6,
+                          1.6f * s, 0.90f);
+            FillEllipse(motifCx, motifCy, motifRx * 0.22f, motifRy * 0.40f,
+                        0xFFF8F5EC, 1.0f);
+            StrokeEllipse(motifCx, motifCy, motifRx * 0.22f, motifRy * 0.40f,
+                          0xFF1C1B20, 1.4f * s, 0.90f);
+        }
+        else if (g_cardTheme == L"yugioh")
+        {
+            // A geometric eye motif using only vector primitives.
+            FillEllipse(motifCx, motifCy, motifRx * 0.86f, motifRy * 0.38f,
+                        0xFFB08D2C, 0.90f);
+            FillEllipse(motifCx, motifCy, motifRx * 0.42f, motifRy * 0.72f,
+                        0xFF171A3A, 1.0f);
+            FillEllipse(motifCx, motifCy, motifRx * 0.15f, motifRy * 0.30f,
+                        0xFFE06C75, 0.95f);
+            StrokeEllipse(motifCx, motifCy, motifRx * 0.86f, motifRy * 0.38f,
+                          0xFFF0C75E, 1.4f * s, 0.95f);
+        }
+        else
+        {
+            // A red-and-gold diamond/roulette motif for the gambling palette.
+            const D2D1_POINT_2F points[] = {
+                D2D1::Point2F(motifCx, motifCy - motifRy),
+                D2D1::Point2F(motifCx + motifRx, motifCy),
+                D2D1::Point2F(motifCx, motifCy + motifRy),
+                D2D1::Point2F(motifCx - motifRx, motifCy)};
+            FillEllipse(motifCx, motifCy, motifRx * 0.78f, motifRy * 0.78f,
+                        0xFF8E1B2A, 0.92f);
+            g_d2dBrush->SetColor(ColorOf(0xFFD4AF37, 0.95f));
+            g_d2dTarget->DrawLine(points[0], points[1], g_d2dBrush, 1.5f * s);
+            g_d2dTarget->DrawLine(points[1], points[2], g_d2dBrush, 1.5f * s);
+            g_d2dTarget->DrawLine(points[2], points[3], g_d2dBrush, 1.5f * s);
+            g_d2dTarget->DrawLine(points[3], points[0], g_d2dBrush, 1.5f * s);
+        }
+    }
 
     if (!g_tuckCards)
     {
