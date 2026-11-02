@@ -49,8 +49,10 @@ The mod's **Settings** tab covers the layout and colors:
   circular live preview, an app icon or just the window name, and come in four
   sizes. Pick theme-based, classic casino, single or custom chip colors.
 - **Desktop strip:** Use a flat row or a carousel, with pill, poker-chip or
-  playing-card tabs. Playing cards can animate when you create or close a
-  desktop; their size and the strip background are configurable.
+  playing-card tabs. **Tuck playing cards** shows just their upper half at the
+  bottom of the screen; turn it off for full cards. Card size, create/close
+  animations, the strip background and highlight or lift selection are
+  configurable.
 - **Held windows:** Press `U` or right-click a window to keep it with you as you
   change desktops. Leave held windows in the grid or put them in a dock on either
   side. The dock can have a panel or float on its own.

@@ -16,3 +16,6 @@
 *.user
 Thumbs.db
 desktop.ini
+
+# Local planning notes
+docs/ROADMAP.md

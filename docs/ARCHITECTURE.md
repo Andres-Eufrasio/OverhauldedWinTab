@@ -244,6 +244,13 @@ falls back to injected `Win` + `Ctrl` + `Left`/`Right` chords. Creating and
 closing desktops still use injected `Win` + `Ctrl` + `D` / `F4`, and their timers
 poll the desktop count instead of waiting a fixed delay.
 
+For playing-card creation, supported Windows 11 builds use the shell's internal
+`CreateDesktop` followed by the non-animated `SwitchDesktop`, so the card draw
+does not end with a second desktop-transition slide. Older or incompatible
+builds fall back to `Win` + `Ctrl` + `D`. During ordinary desktop switches the
+overlay keeps its last composed frame and pauses the frame and carousel timers;
+this avoids re-rendering DWM thumbnails while Explorer is animating the switch.
+
 Activating a search result that lives on another desktop stores the target in
 `g_pendingActivateWindow` and starts the same desktop switch. `kTimerDesktop`
 waits for the shell to finish switching, verifies that the target is now on the
@@ -295,8 +302,10 @@ State is intentionally small:
 - `DesktopStrip.Selection` is resolved in `RebuildPills()`: `lift` raises
   the selected tab (or the active tab when the strip is not focused) by 6-10 px,
   shifts its hit and close rectangles with it, and suppresses the accent outline
-  for pills and chips. Playing cards always keep their printed ink border; a
-  selected card gets a slightly heavier edge instead.
+  for pills and chips. In highlight mode, `DesktopHighlightStrength()` keeps the
+  active tab subdued and the keyboard-selected tab brighter across all tab
+  shapes. Playing cards keep their printed ink border, with a tinted face and
+  short accent mark at the top instead of an accent outline.
 - `HeldWindows.LiftHeld`, `WindowTabs.LiftHovered` and `WindowTabs.LiftSelected`
   add the same lift to window cards and chips. Held dock items use the held lift
   when it is enabled, and the hover lift when that option is enabled.
@@ -336,22 +345,28 @@ of truth for the tab shape. `UsesChips()` and `UsesCards()` resolve the tab styl
 `IsWheel()` marks the carousel layout. In carousel mode every tab is placed by
 its wrapped distance `d` from `g_carouselPos`, with `scale = 1 - 0.18|d|`, a
 `4.5d` degree tilt, a small vertical arc and an alpha fade. `DrawChipTab` paints
-a poker chip: a clay body with eight wide inlaid edge spots, a pressed rim groove,
-the desktop number on a cream centre inlay, a ring of small pressed marks, the
-desktop name on a label below, and the close button on the rim. Pill tabs keep
-their 42 px flat-row and 52 px carousel heights. Chips are 52 px in the flat row
+a poker chip: a clay body with eight curved edge spots that reach the outside
+edge, a pressed rim groove, the desktop number on a cream centre inlay, a ring
+of small pressed marks, the desktop name on a label below, and the close button
+on the rim. Pill tabs keep their 42 px flat-row and 52 px carousel heights.
+Chips are 52 px in the flat row
 and 64 px in the carousel, with the name on a label underneath (15 px and 17 px
 respectively).
 
 Playing cards are a tab style, so they work in both layouts. `RebuildPills`
 uses a fixed 160 x 224 card multiplied by `Cards.Size`
-(small 0.82, medium 1.0, large 1.22) and the strip is `224 * scale + 40` px tall
-(264 px at medium) so the rotated cards stay inside it. The carousel positions
-cards on the wheel; the flat row shrinks them if the row cannot fit. The create
-button becomes a face-down card: `DrawCreateCard` paints a vector card back with
-a double gold frame, a clipped diagonal lattice with diamond pips, an oval
-medallion and ornament ring, and a `New desktop` banner. The old centered plus
-was removed so the back reads as a card rather than an add button.
+(small 0.82, medium 1.0, large 1.22). Full cards reserve
+`224 * scale + 40` px (264 px at medium) for the strip. With `Cards.Tucked` on,
+the strip reserves only half that card height plus 24 px and reaches the bottom
+edge; the lower halves of cards are clipped by the screen. Tucked cards use a
+slightly larger scale, names move into the visible upper half, and the create
+card omits its lower medallion and label. Shortcut hints move above the strip.
+The carousel positions cards on the wheel; the flat row shrinks them if it
+cannot fit. The create button is a face-down card:
+`DrawCreateCard` paints a vector card back with a double gold frame, a clipped
+diagonal lattice with diamond pips, an oval medallion and ornament ring, and a
+`New desktop` banner in full-card mode. Tucked mode leaves that lower detail
+below the screen edge.
 `WM_LBUTTONDOWN`/`WM_MOUSEMOVE`/`WM_LBUTTONUP` turn a downward pull into the same
 create action as a click. `DrawDesktopCard` paints the ivory face,
 corner rank and suit (rotated 180 degrees in the bottom corner), a large suit
@@ -367,8 +382,9 @@ real tab needs to be hidden. A throw hides the closing tab until the ghost
 leaves. Both animations use `AnimationSeconds()`, so
 `Appearance.AnimationSpeed` controls them.
 `DesktopStrip.Background` controls the panel: `Auto` keeps it in the flat row
-and hides it for the carousel, `StripBackgroundVisible()` resolves the three
-modes, and floating tabs get a soft drop shadow. `kTimerCarousel` eases
+unless cards are tucked, and hides it for the carousel.
+`StripBackgroundVisible()` resolves the three modes, and floating tabs get a
+soft drop shadow. `kTimerCarousel` eases
 `g_carouselPos` towards `StripTarget()`
 (strip selection, pending desktop switch, or active desktop) by the shortest
 route around the wheel, and `KickCarousel()` restarts the timer when the target
