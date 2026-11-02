@@ -15,6 +15,26 @@ Guiding rules:
   magic numbers through `RenderScene`.
 - Each feature gets its own commit and a README + readme-block sync.
 
+## Implemented in v0.8.2
+
+- Settings are grouped by topic: **Appearance**, **Window tabs**, **Chips**,
+  **Desktop strip**, **Playing cards**, **Held windows** and **Behavior**. The
+  flat `Appearance.*` keys moved to the matching group, so old values are not
+  migrated automatically.
+- Window cards and playing cards no longer use an accent outline for selection.
+  Window cards keep a neutral edge and the selected fill; playing cards keep
+  their printed ink border with a slightly heavier selected edge. Accent outlines
+  remain on pills and chips.
+- Right-clicking a window card or dock item toggles its held state; right-clicking
+  a desktop still renames it.
+- Desktop switches poll the shell every 40 ms instead of waiting a fixed
+  400-700 ms, and the current cards and thumbnails stay visible until the target
+  desktop is active.
+- `Shift` + `/` (`?`) focuses the search field in all-desktop mode. Results from
+  inactive desktops are numbered (`D2`, `D3`, ...), show the application icon in
+  place of the unavailable live thumbnail, and activate by switching to their
+  desktop first.
+
 ## Implemented in v0.8.1
 
 - Poker chips follow the look of real clay casino chips: a moulded outer edge,
@@ -129,22 +149,30 @@ natural complement to the number-key moves:
   cancels.
 - Held windows and the `1`-`9` move path stay unchanged.
 
-**Right-click context menu on a card**: Activate, Move to desktop (submenu),
-Hold/Release, Close. A small D2D popup keeps the visual language; a native
-`TrackPopupMenu` is cheaper but looks out of place. Decide before building.
+**Right-click on a card**: Direct right-click now toggles Hold/Release. A future
+context menu could add Activate, Move to desktop (submenu) and Close. A small D2D
+popup keeps the visual language; a native `TrackPopupMenu` is cheaper but looks
+out of place. Decide before building.
 
 ## Phase 3 - Search and desktop awareness
 
+Cross-desktop search is implemented as `Shift` + `/` (`?`). It uses
+`EnumWindows` plus `IVirtualDesktopManager::GetWindowDesktopId` rather than
+`IApplicationViewCollection`, so it keeps the existing window filtering and does
+not block on the shell view collection. Off-desktop results carry a `D#` title
+prefix and an app-icon preview; activation stores the target and waits for the
+desktop switch before focusing it.
+
+Still open:
+
 | Setting | Values | Notes |
 | ------- | ------ | ----- |
-| `Behavior.SearchAllDesktops` | on/off | Enumerate via `IApplicationViewCollection` instead of only the current desktop |
-| `Appearance.ShowDesktopBadges` | on/off | Small "Desktop 2" badge on cards found on another desktop |
+| `Appearance.ShowDesktopBadges` | on/off | Make the `D#` title prefix optional, or replace it with a compact badge |
 | `Appearance.ShowWindowCounts` | on/off | Window count on each desktop pill |
 
-Searching other desktops needs activation to switch to that window's desktop
-first, which is a natural extension of `SwitchDesktopDirect` +
-`MoveViewToDesktop`; the main risk is enumerating views reliably without
-blocking the UI thread.
+The main remaining risk is stale desktop metadata between the initial
+enumeration and activation; activation re-reads the target's desktop id, and a
+failed switch leaves the overview open instead of focusing the wrong desktop.
 
 ## Phase 4 - Larger or riskier ideas
 
@@ -167,4 +195,5 @@ blocking the UI thread.
 
 1. Phase 1 visual pack as one release (v0.5.0), split into 2-3 commits.
 2. Drag-to-move as the headline of Phase 2 (v0.5.x), then the menu.
-3. Re-evaluate cross-desktop search after the shell enumeration probe.
+3. Revisit desktop badges and window counts after all-desktop search has been
+   exercised on real multi-desktop setups.

@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.8.1
+// @version         0.8.2
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -35,11 +35,13 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Full-screen Task View overlay for the active monitor
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
-- Search across window titles and applications (press `/` to start typing)
+- Search across window titles and applications on the current desktop, or across
+  every virtual desktop with `Shift` + `/`
 - Optional poker-chip window tabs with a circular live preview, app icon or
   name-only centre, in four sizes
 - Optional playing-card, poker-chip and carousel desktop tabs
-- Accent-outline or pick-up/lift selection for every desktop tab style
+- Selection styles for desktop tabs: accent outlines for pills and chips, plus
+  an optional lift for any tab shape
 - Held windows can move into a left or right side dock, with full keyboard
   access and an optional floating (background-free) dock
 - Optional lift on window hover and keyboard selection
@@ -99,10 +101,12 @@ primitives, so it stays crisp at every DPI and card size.
 | `N` | Create a new virtual desktop (strip focused) |
 | `h` `j` `k` `l` | Vim movement through the grid, held dock or desktop strip |
 | `/` | Focus the search field (reveals it when hidden) |
+| `Shift` + `/` (`?`) | Focus the search field and search every virtual desktop |
 | `x` | Close the selected window or dock item (Vim) |
 | Typing while the search is focused | Filter windows by title or application |
 | Left click | Activate a window, or jump straight to a desktop |
-| Right click a desktop | Rename that virtual desktop |
+| Right click a desktop tab | Rename that virtual desktop |
+| Right click a window card or dock item | Hold or release that window |
 | Middle click on a card or dock item | Close that window |
 | Click a held dock item | Activate that window |
 | Click the create control on the strip | Create a new virtual desktop (a `+`, or the face-down card) |
@@ -111,14 +115,16 @@ primitives, so it stays crisp at every DPI and card size.
 | Mouse wheel | Move through grid pages |
 
 The search field is only typed into once it has focus: click it or press `/`
-first. With **Always show search** turned off the field stays hidden until you
-press `/`. Until the field has focus the letter keys are available to navigation,
-so a query that contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a
-command. Focusing a field that already has a query selects it, so the next typed
-character replaces the old query. Set **Vim navigation** to `off` to disable the
-movement keys.
+first (or `Shift` + `/` for all-desktop search). With **Always show search**
+turned off the field stays hidden until you press `/` or `?`. Until the field
+has focus the letter keys are available to navigation, so a query that contains
+`h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Focusing a field
+that already has a query selects it, so the next typed character replaces the
+old query. Set **Vim navigation** to `off` to disable the movement keys.
 
 ## Settings
+
+### Appearance
 
 | Setting | Description |
 | ------- | ----------- |
@@ -128,30 +134,60 @@ movement keys.
 | Background | Backdrop effect: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent |
 | Background color | Tint color of the overview panel, in `#RRGGBB` format (Custom theme) |
 | Background opacity | How strong the panel tint is over the backdrop (`0`-`100`) |
-| Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
-| Window tabs | Square previews, or poker chips with the window title curved around the centre inlay |
+| Animation speed | Relative speed of the open, close and playing-card animations |
+
+### Window tabs
+
+| Setting | Description |
+| ------- | ----------- |
+| Window tab style | Square previews, or poker chips with the window title curved around the centre inlay |
 | Window chip content | Live window preview, app icon, or name only |
 | Window chip size | Small, medium, large or extra-large poker-chip window tabs |
+| Show window icons | Show each window's application icon in its card header |
+| Lift hovered windows | Raise a window while the pointer is over it |
+| Lift selected window | Raise the keyboard-selected window in the grid |
+
+### Chips
+
+| Setting | Description |
+| ------- | ----------- |
 | Chip colors | Theme accent shades, a single color, a custom palette, or classic casino colors |
 | Chip color | Single chip color in `#RRGGBB` format (Single color mode) |
 | Chip palette | Comma-separated `#RRGGBB` colors cycled across desktop and window chips (Custom palette mode) |
-| Desktop selection | Accent outline, or pick-up/lift for the selected and active desktop tabs |
-| Held windows | Keep held windows in the grid, or dock them on the left or right |
-| Held dock background | Show a panel behind the dock; turn off for a floating dock |
-| Lift held windows | Raise windows held with `U` so they look picked up |
-| Lift hovered windows | Raise a window while the pointer is over it |
-| Lift selected window | Raise the keyboard-selected window in the grid |
-| Desktop strip | Flat row or rotating carousel |
+
+### Desktop strip
+
+| Setting | Description |
+| ------- | ----------- |
+| Desktop strip layout | Flat row or rotating carousel |
 | Desktop tabs | Pills, poker chips, or playing cards |
-| Card size | Small, medium or large playing cards |
 | Desktop strip background | Panel behind the tabs: Auto (flat only), Always show, or Always hide |
-| Animation speed | Relative speed of the open, close and playing-card animations |
+| Desktop selection | Accent outline for pills and chips, or pick-up/lift for the selected and active tabs; playing cards keep their printed border |
+| Wrap desktop strip | `Left`/`Right` and `h`/`l` wrap from the last desktop to the first |
+
+### Playing cards
+
+| Setting | Description |
+| ------- | ----------- |
+| Card size | Small, medium or large playing cards |
 | Card animations | Animate the playing-card draw and throw when creating or closing a desktop |
+
+### Held windows
+
+| Setting | Description |
+| ------- | ----------- |
+| Held window placement | Keep held windows in the grid, or dock them on the left or right |
+| Held dock background | Show a panel behind the dock; turn off for a floating dock |
+| Lift held windows | Raise held windows so they look picked up |
+
+### Behavior
+
+| Setting | Description |
+| ------- | ----------- |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
-| Wrap desktop strip | `Left`/`Right` and `h`/`l` wrap from the last desktop to the first |
 | Vim navigation | Enable `h` `j` `k` `l`, `/` and `x` navigation keys |
 
 **Background** controls what sits behind the panel:
@@ -193,7 +229,7 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 
 ## Desktop strip
 
-**Desktop strip** chooses how the virtual desktops are laid out at the bottom:
+**Desktop strip layout** chooses how the virtual desktops are laid out at the bottom:
 
 - **Flat row** (default) – every desktop in a single row, with the create button
   after them and the strip panel behind them.
@@ -225,11 +261,13 @@ one tosses its card up and off the strip. The card animations use the same
 **Animation speed** as the open and close transitions.
 
 **Desktop selection** changes how the active and selected desktop tabs are
-marked. **Accent outline** (default) keeps the current accent border. **Lift**
-raises the selected tab, or the active tab when the strip is not focused, and
-skips the accent outline so the pick-up is the only selection cue. Lift works
-for pills, poker chips and playing cards in both the flat row and the carousel;
-the shadow deepens as the tab rises.
+marked. **Accent outline** (default) keeps the current accent border for pills
+and chips. **Lift** raises the selected tab, or the active tab when the strip is
+not focused, and skips the accent outline so the pick-up is the only selection
+cue. Playing cards always keep their printed ink border and never use the accent
+outline; a selected card gets a slightly heavier edge. Lift works for pills,
+poker chips and playing cards in both the flat row and the carousel; the shadow
+deepens as the tab rises.
 
 **Desktop strip background** controls the panel behind the strip: **Auto**
 (default) keeps it for the flat row and hides it for the carousel, **Always show**
@@ -241,7 +279,7 @@ instead of stopping at the edge.
 
 ## Window chips
 
-**Window tabs** can draw each open window as a square preview or as a
+**Window tab style** can draw each open window as a square preview or as a
 poker chip. The window title is curved around the top of the centre inlay, one
 character at a time, and the centre can show:
 
@@ -262,19 +300,21 @@ colors.
 
 ## Held windows
 
-Press `U` to hold the selected window. Held windows follow you to every desktop
-you switch to, and they get a colored frame and corner dot. By default they stay
-in the grid. Set **Held windows** to **Dock on the left** or **Dock on the
-right** to move them into a side panel instead; the panel uses the same squares
-or poker chips as the grid, so the two modes stay visually consistent.
+Press `U` to hold the selected window, or right-click any window card or dock
+item to toggle its held state. Held windows follow you to every desktop you
+switch to, and they get a colored frame and corner dot. By default they stay in
+the grid. Set **Held window placement** to **Dock on the left** or **Dock on
+the right** to move them into a side panel instead; the panel uses the same
+squares or poker chips as the grid, so the two modes stay visually consistent.
 
 The dock has its own keyboard stage: press `Tab` from the grid to focus it, then
 use the arrows (or `h`/`j`/`k`/`l`) to select an item, `Enter` to activate it,
 `Delete` to close it and `U` to release it back into the grid. `Tab` continues to
-the desktop strip and then back to the grid; `Esc` leaves the dock. Clicking,
-middle-clicking or hovering a dock item still works as before. Held dock items
-stay visible while a search is active, so a held window is always one click
-away. Turn **Held dock background** off to let the dock float without a panel.
+the desktop strip and then back to the grid; `Esc` leaves the dock. Clicking or
+middle-clicking a dock item still works as before, and right-clicking it
+releases the hold. Held dock items stay visible while a search is active, so a
+held window is always one click away. Turn **Held dock background** off to let
+the dock float without a panel.
 **Lift held windows** is on by default so held items look picked up; **Lift
 hovered windows** and **Lift selected window** are optional and add the same
 raised look to the pointer hover and the keyboard cursor. The lift deepens the
@@ -287,6 +327,13 @@ title or application. Focusing the field again selects the previous query, so
 typing starts a new one. The query is cleared every time the overview opens, so a
 new `Win` + `Tab` always starts from the full window list. Turn **Always show
 search** off to keep the field hidden until you press `/`.
+
+Press `Shift` + `/` (`?`) instead to search every virtual desktop. Results from
+other desktops are prefixed with their desktop number (`D2`, `D3`, ...) and show
+the application icon in place of the live thumbnail, because Windows cloaks
+windows on inactive desktops. Activating one switches to that desktop first and
+then focuses the window. Press `Esc` to leave all-desktop search and return to
+the current desktop.
 
 ## How it works
 
@@ -303,8 +350,10 @@ uses (`HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name`), so renames are
 picked up by Windows and other tools.
 
 Switching desktops calls the shell's internal `IVirtualDesktopManagerInternal`
-so clicking a desktop pill or pressing a number goes straight there. Moving a
-window to another desktop uses the shell's `IApplicationViewCollection` and
+so clicking a desktop pill or pressing a number goes straight there. The current
+cards stay visible while the switch runs, and the grid is rebuilt as soon as
+Windows reports the target desktop active. Moving a window to another desktop
+uses the shell's `IApplicationViewCollection` and
 `MoveViewToDesktop`: the documented `MoveWindowToDesktop` refuses windows owned
 by other processes with `E_ACCESSDENIED`, which is always the case for the
 separate tool process. Creating or closing a desktop still presses the system
@@ -393,102 +442,12 @@ OverhauldedWinTab is a pre-release project.
     - BackgroundOpacity: 70
       $name: Background opacity
       $description: Strength of the panel tint drawn over the backdrop (0-100). 0 leaves the backdrop untouched, 100 is fully opaque.
-    - ShowWindowIcons: true
-      $name: Show window icons
-      $description: Show each window's application icon in the card header.
     - ShowHints: true
       $name: Show hints
       $description: Show the keyboard shortcut hints at the bottom left.
     - AlwaysShowSearch: true
       $name: Always show search
       $description: Keep the search bar visible. When off, press / to reveal it.
-    - WindowTabs: "cards"
-      $name: Window tabs
-      $description: Draw open windows as square previews, or as round poker chips with the title curved around the rim.
-      $options:
-      - "cards": Squares
-      - "chips": Poker chips
-    - WindowChipContent: "preview"
-      $name: Window chip content
-      $description: What to show in the middle of a poker-chip window. The window name always curves around the top of the centre inlay.
-      $options:
-      - "preview": Live window preview
-      - "icon": App icon
-      - "blank": Name only
-    - WindowChipSize: "medium"
-      $name: Window chip size
-      $description: Size of poker-chip window tabs. Larger chips use more of the grid.
-      $options:
-      - "small": Small
-      - "medium": Medium
-      - "large": Large
-      - "extra-large": Extra large
-    - ChipColorMode: "theme"
-      $name: Chip colors
-      $description: Palette used by desktop chips and window chips. Theme derives a set of shades from the active accent color; Classic keeps the original casino colors.
-      $options:
-      - "theme": Theme accent shades
-      - "single": Single color
-      - "palette": Custom palette
-      - "classic": Classic casino colors
-    - ChipColor: "#1E5AA8"
-      $name: Chip color
-      $description: 'Single chip color in #RRGGBB format. Used when Chip colors is set to Single color.'
-    - ChipPalette: "#B3261E,#1E5AA8,#1E7A46,#6A3D9A,#B45F06,#26262B"
-      $name: Chip palette
-      $description: 'Comma-separated #RRGGBB colors, cycled across desktop and window chips. Used when Chip colors is set to Custom palette.'
-    - DesktopSelection: "highlight"
-      $name: Desktop selection
-      $description: How the selected and active desktop tabs are marked. Lift raises the tab and skips the accent outline.
-      $options:
-      - "highlight": Accent outline
-      - "lift": Pick up / lift
-    - HeldDock: "off"
-      $name: Held windows
-      $description: Keep held windows in the grid, or move them into a side dock. The dock works for both window squares and poker chips.
-      $options:
-      - "off": Keep in the grid
-      - "left": Dock on the left
-      - "right": Dock on the right
-    - HeldDockBackground: true
-      $name: Held dock background
-      $description: Show a panel behind the held-window dock. Turn off to let the dock float over the desktop.
-    - LiftHeldWindows: true
-      $name: Lift held windows
-      $description: Raise windows held with U so they look picked up.
-    - LiftHoveredWindows: false
-      $name: Lift hovered windows
-      $description: Raise a window while the pointer is over it.
-    - LiftSelectedWindow: false
-      $name: Lift selected window
-      $description: Raise the keyboard-selected window in the grid.
-    - DesktopStrip: "flat"
-      $name: Desktop strip
-      $description: Lay the virtual desktops out as a flat row or a rotating carousel.
-      $options:
-      - "flat": Flat row
-      - "carousel": Carousel
-    - StripTabs: "pill"
-      $name: Desktop tabs
-      $description: Shape of the desktop tabs. Poker chips show the desktop number on a round chip with the name below; playing cards turn each desktop into a portrait card.
-      $options:
-      - "pill": Pills
-      - "chip": Poker chips
-      - "cards": Playing cards
-    - CardSize: "medium"
-      $name: Card size
-      $description: Size of the playing cards when Desktop tabs is set to Playing cards.
-      $options:
-      - "small": Small
-      - "medium": Medium
-      - "large": Large
-    - StripBackground: "auto"
-      $name: Desktop strip background
-      $description: Panel behind the virtual desktop tabs. Auto shows it for the flat row and hides it for the floating carousel and card wheel.
-      $options:
-      - "auto": Auto
-      - "show": Always show
-      - "hide": Always hide
     - AnimationSpeed: "100"
       $name: Animation speed
       $description: Relative speed of the open, close and playing-card animations.
@@ -497,10 +456,113 @@ OverhauldedWinTab is a pre-release project.
       - "100": 100%
       - "125": 125%
       - "150": 150%
-    - CardAnimations: true
+  $name: Appearance
+- WindowTabs:
+    - Style: "cards"
+      $name: Window tab style
+      $description: Draw open windows as square previews, or as round poker chips with the title curved around the centre inlay.
+      $options:
+      - "cards": Squares
+      - "chips": Poker chips
+    - ChipContent: "preview"
+      $name: Window chip content
+      $description: What to show in the middle of a poker-chip window. The window name always curves around the top of the centre inlay.
+      $options:
+      - "preview": Live window preview
+      - "icon": App icon
+      - "blank": Name only
+    - ChipSize: "medium"
+      $name: Window chip size
+      $description: Size of poker-chip window tabs. Larger chips use more of the grid.
+      $options:
+      - "small": Small
+      - "medium": Medium
+      - "large": Large
+      - "extra-large": Extra large
+    - ShowIcons: true
+      $name: Show window icons
+      $description: Show each window's application icon in the card header.
+    - LiftHovered: false
+      $name: Lift hovered windows
+      $description: Raise a window while the pointer is over it.
+    - LiftSelected: false
+      $name: Lift selected window
+      $description: Raise the keyboard-selected window in the grid.
+  $name: Window tabs
+- Chips:
+    - Mode: "theme"
+      $name: Chip colors
+      $description: Palette used by desktop chips and window chips. Theme derives a set of shades from the active accent color; Classic keeps the original casino colors.
+      $options:
+      - "theme": Theme accent shades
+      - "single": Single color
+      - "palette": Custom palette
+      - "classic": Classic casino colors
+    - Color: "#1E5AA8"
+      $name: Chip color
+      $description: 'Single chip color in #RRGGBB format. Used when Chip colors is set to Single color.'
+    - Palette: "#B3261E,#1E5AA8,#1E7A46,#6A3D9A,#B45F06,#26262B"
+      $name: Chip palette
+      $description: 'Comma-separated #RRGGBB colors, cycled across desktop and window chips. Used when Chip colors is set to Custom palette.'
+  $name: Chips
+- DesktopStrip:
+    - Layout: "flat"
+      $name: Desktop strip layout
+      $description: Lay the virtual desktops out as a flat row or a rotating carousel.
+      $options:
+      - "flat": Flat row
+      - "carousel": Carousel
+    - Tabs: "pill"
+      $name: Desktop tabs
+      $description: Shape of the desktop tabs. Poker chips show the desktop number on a round chip with the name below; playing cards turn each desktop into a portrait card.
+      $options:
+      - "pill": Pills
+      - "chip": Poker chips
+      - "cards": Playing cards
+    - Background: "auto"
+      $name: Desktop strip background
+      $description: Panel behind the virtual desktop tabs. Auto shows it for the flat row and hides it for the floating carousel and card wheel.
+      $options:
+      - "auto": Auto
+      - "show": Always show
+      - "hide": Always hide
+    - Selection: "highlight"
+      $name: Desktop selection
+      $description: How selected and active desktop tabs are marked. Lift raises the tab; accent outlines apply to pills and chips, while playing cards keep their printed border.
+      $options:
+      - "highlight": Accent outline
+      - "lift": Pick up / lift
+    - Wrap: true
+      $name: Wrap desktop strip
+      $description: Let Left/Right and h/l wrap from the last desktop back to the first in the strip.
+  $name: Desktop strip
+- Cards:
+    - Size: "medium"
+      $name: Card size
+      $description: Size of the playing cards when Desktop tabs is set to Playing cards.
+      $options:
+      - "small": Small
+      - "medium": Medium
+      - "large": Large
+    - Animations: true
       $name: Card animations
       $description: Animate playing cards being drawn from the deck and thrown away when a desktop is created or closed.
-  $name: Appearance
+  $name: Playing cards
+- HeldWindows:
+    - Mode: "off"
+      $name: Held window placement
+      $description: Keep held windows in the grid, or move them into a side dock. The dock works for both window squares and poker chips.
+      $options:
+      - "off": Keep in the grid
+      - "left": Dock on the left
+      - "right": Dock on the right
+    - DockBackground: true
+      $name: Held dock background
+      $description: Show a panel behind the held-window dock. Turn off to let the dock float over the desktop.
+    - LiftHeld: true
+      $name: Lift held windows
+      $description: Raise held windows so they look picked up.
+  $name: Held windows
 - Behavior:
     - CloseOnFocusLoss: true
       $name: Close when focus is lost
@@ -508,9 +570,6 @@ OverhauldedWinTab is a pre-release project.
     - WrapNavigation: true
       $name: Wrap grid navigation
       $description: Arrow keys wrap around the edges of the grid.
-    - WrapDesktopStrip: true
-      $name: Wrap desktop strip
-      $description: Let Left/Right and h/l wrap from the last desktop back to the first in the strip.
     - VimNavigation: true
       $name: Vim navigation
       $description: Use h/j/k/l to move, / to focus the search and x to close the selected window.
@@ -792,6 +851,7 @@ static UINT g_dpi = 96;
 static std::wstring g_search;
 static bool g_searchFocused = false;
 static bool g_searchSelectAll = false;
+static bool g_searchAllDesktops = false;
 static int g_selected = 0;
 static int g_page = 0;
 static bool g_focusStrip = false;
@@ -845,6 +905,9 @@ struct WindowEntry
     std::wstring titleLower;
     std::wstring app;
     std::wstring appLower;
+    GUID desktopId = {};
+    int desktopIndex = -1;
+    bool onCurrentDesktop = true;
     ID2D1Bitmap* icon = nullptr;
     float iconSize = 0.0f;
 };
@@ -865,6 +928,13 @@ static IUnknown* g_viewCollection = nullptr;
 static bool g_vdInternalResolved = false;
 static int g_pendingDesktopTarget = -1;
 static int g_pendingDesktopTries = 0;
+static HWND g_pendingActivateWindow = nullptr;
+static int g_pendingActivateDesktop = -1;
+static bool g_desktopActionCreate = false;
+static bool g_desktopActionClose = false;
+static int g_desktopActionStartCount = 0;
+static ULONGLONG g_busySince = 0;
+static bool g_keepThumbnailsWhileBusy = false;
 static float g_carouselPos = 0.0f;
 static ULONGLONG g_lastCarouselTick = 0;
 
@@ -881,6 +951,7 @@ static IDWriteTextFormat* g_fmtPill = nullptr;
 static IDWriteTextFormat* g_fmtPillLarge = nullptr;
 static IDWriteTextFormat* g_fmtCardSuit = nullptr;
 static IDWriteTextFormat* g_fmtCardSuitBig = nullptr;
+static IDWriteTextFormat* g_fmtChipSuit = nullptr;
 static IDWriteTextFormat* g_fmtHint = nullptr;
 static IDWriteTextFormat* g_fmtEmpty = nullptr;
 static IDWriteInlineObject* g_ellipsis = nullptr;
@@ -1230,34 +1301,34 @@ static void LoadSettings()
                      : background == L"none" ? BackgroundMode::None
                      : BackgroundMode::Acrylic;
 
-    g_showIcons = Wh_GetIntSetting(L"Appearance.ShowWindowIcons") != 0;
+    g_showIcons = Wh_GetIntSetting(L"WindowTabs.ShowIcons") != 0;
     g_showHints = Wh_GetIntSetting(L"Appearance.ShowHints") != 0;
     g_searchAlwaysVisible = Wh_GetIntSetting(L"Appearance.AlwaysShowSearch") != 0;
 
-    const std::wstring windowTabs = read(L"Appearance.WindowTabs");
+    const std::wstring windowTabs = read(L"WindowTabs.Style");
     g_windowTabStyle = windowTabs == L"chips" ? WindowTabStyle::Chips
                                                : WindowTabStyle::Cards;
 
-    const std::wstring chipContent = read(L"Appearance.WindowChipContent");
+    const std::wstring chipContent = read(L"WindowTabs.ChipContent");
     g_windowChipContent = chipContent == L"icon" ? WindowChipContent::Icon
                         : chipContent == L"blank" ? WindowChipContent::Blank
                                                    : WindowChipContent::Preview;
 
-    const std::wstring chipSize = read(L"Appearance.WindowChipSize");
+    const std::wstring chipSize = read(L"WindowTabs.ChipSize");
     g_windowChipScale = chipSize == L"small" ? 0.82f
                       : chipSize == L"large" ? 1.22f
                       : chipSize == L"extra-large" ? 1.45f
                                                    : 1.0f;
 
-    const std::wstring chipMode = read(L"Appearance.ChipColorMode");
+    const std::wstring chipMode = read(L"Chips.Mode");
     g_chipColorMode = chipMode == L"single" ? ChipColorMode::Single
                     : chipMode == L"palette" ? ChipColorMode::Palette
                     : chipMode == L"classic" ? ChipColorMode::Classic
                                              : ChipColorMode::Theme;
-    g_chipColor = parseColor(read(L"Appearance.ChipColor"), 0xFF1E5AA8);
+    g_chipColor = parseColor(read(L"Chips.Color"), 0xFF1E5AA8);
 
     g_chipPalette.clear();
-    const std::wstring paletteText = read(L"Appearance.ChipPalette");
+    const std::wstring paletteText = read(L"Chips.Palette");
     size_t paletteStart = 0;
     while (paletteStart <= paletteText.size())
     {
@@ -1278,28 +1349,28 @@ static void LoadSettings()
                          0xFFB45F06, 0xFF26262B};
     }
 
-    const std::wstring desktopSelection = read(L"Appearance.DesktopSelection");
+    const std::wstring desktopSelection = read(L"DesktopStrip.Selection");
     g_desktopSelection = desktopSelection == L"lift" ? DesktopSelection::Lift
                                                       : DesktopSelection::Highlight;
 
-    const std::wstring heldDock = read(L"Appearance.HeldDock");
+    const std::wstring heldDock = read(L"HeldWindows.Mode");
     g_heldDock = heldDock == L"left" ? HeldDock::Left
                : heldDock == L"right" ? HeldDock::Right
                                       : HeldDock::Off;
-    g_heldDockBackground = Wh_GetIntSetting(L"Appearance.HeldDockBackground") != 0;
-    g_liftHeldWindows = Wh_GetIntSetting(L"Appearance.LiftHeldWindows") != 0;
-    g_liftHoveredWindows = Wh_GetIntSetting(L"Appearance.LiftHoveredWindows") != 0;
-    g_liftSelectedWindow = Wh_GetIntSetting(L"Appearance.LiftSelectedWindow") != 0;
+    g_heldDockBackground = Wh_GetIntSetting(L"HeldWindows.DockBackground") != 0;
+    g_liftHeldWindows = Wh_GetIntSetting(L"HeldWindows.LiftHeld") != 0;
+    g_liftHoveredWindows = Wh_GetIntSetting(L"WindowTabs.LiftHovered") != 0;
+    g_liftSelectedWindow = Wh_GetIntSetting(L"WindowTabs.LiftSelected") != 0;
 
-    const std::wstring strip = read(L"Appearance.DesktopStrip");
-    const std::wstring tabs = read(L"Appearance.StripTabs");
+    const std::wstring strip = read(L"DesktopStrip.Layout");
+    const std::wstring tabs = read(L"DesktopStrip.Tabs");
     g_stripStyle = strip == L"carousel" ? StripStyle::Carousel
                                         : StripStyle::Flat;
     g_tabStyle = tabs == L"chip" ? TabStyle::Chip
                : tabs == L"cards" ? TabStyle::Cards
                                   : TabStyle::Pill;
 
-    const std::wstring cardSize = read(L"Appearance.CardSize");
+    const std::wstring cardSize = read(L"Cards.Size");
     g_cardScale = cardSize == L"small" ? 0.82f
                 : cardSize == L"large" ? 1.22f
                                        : 1.0f;
@@ -1307,7 +1378,7 @@ static void LoadSettings()
     const std::wstring title = read(L"Appearance.Title");
     g_titleText = title.empty() ? L"Task View" : title;
 
-    const std::wstring stripBackground = read(L"Appearance.StripBackground");
+    const std::wstring stripBackground = read(L"DesktopStrip.Background");
     g_stripBackground = stripBackground == L"show" ? StripBackground::Show
                       : stripBackground == L"hide" ? StripBackground::Hide
                                                    : StripBackground::Auto;
@@ -1316,11 +1387,11 @@ static void LoadSettings()
     g_animSpeedPercent = speed == L"75" ? 75 : speed == L"125" ? 125
                         : speed == L"150" ? 150 : 100;
 
-    g_cardAnimations = Wh_GetIntSetting(L"Appearance.CardAnimations") != 0;
+    g_cardAnimations = Wh_GetIntSetting(L"Cards.Animations") != 0;
 
     g_closeOnFocusLoss = Wh_GetIntSetting(L"Behavior.CloseOnFocusLoss") != 0;
     g_wrapNavigation = Wh_GetIntSetting(L"Behavior.WrapNavigation") != 0;
-    g_wrapDesktopStrip = Wh_GetIntSetting(L"Behavior.WrapDesktopStrip") != 0;
+    g_wrapDesktopStrip = Wh_GetIntSetting(L"DesktopStrip.Wrap") != 0;
     g_vimNavigation = Wh_GetIntSetting(L"Behavior.VimNavigation") != 0;
 
     const std::wstring theme = read(L"Appearance.Theme");
@@ -1378,6 +1449,7 @@ static void ReleaseTextFormats()
     release(g_fmtPillLarge);
     release(g_fmtCardSuit);
     release(g_fmtCardSuitBig);
+    release(g_fmtChipSuit);
     release(g_fmtHint);
     release(g_fmtEmpty);
     if (g_ellipsis) { g_ellipsis->Release(); g_ellipsis = nullptr; }
@@ -1479,6 +1551,7 @@ static void EnsureTextFormats()
     };
     createSymbol(g_dwrite, 15.0f * g_scale, &g_fmtCardSuit);
     createSymbol(g_dwrite, 44.0f * g_scale, &g_fmtCardSuitBig);
+    createSymbol(g_dwrite, 11.0f * g_scale, &g_fmtChipSuit);
     create(g_dwrite, DWRITE_FONT_WEIGHT_NORMAL, 12.0f * g_scale, &g_fmtHint);
     create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 17.0f * g_scale, &g_fmtEmpty);
 
@@ -1513,9 +1586,10 @@ static void EnsureTextFormats()
         }
     }
 
-    IDWriteTextFormat* formats[] = {g_fmtTitle,    g_fmtCard,      g_fmtSearch,
-                                    g_fmtPill,     g_fmtPillLarge, g_fmtHint,
-                                    g_fmtEmpty,    g_fmtCardSuit,  g_fmtCardSuitBig};
+    IDWriteTextFormat* formats[] = {
+        g_fmtTitle,    g_fmtCard,     g_fmtSearch,   g_fmtPill,
+        g_fmtPillLarge, g_fmtHint,    g_fmtEmpty,    g_fmtCardSuit,
+        g_fmtCardSuitBig, g_fmtChipSuit};
     for (IDWriteTextFormat* format : formats)
     {
         if (format)
@@ -1728,6 +1802,14 @@ static ID2D1Bitmap* EnsureEntryIcon(WindowEntry& entry, int pixels)
     return entry.icon;
 }
 
+static int DesktopIndexForId(const GUID& id)
+{
+    for (int i = 0; i < static_cast<int>(g_desktops.size()); i++)
+        if (IsEqualGUID(g_desktops[i].id, id))
+            return i;
+    return -1;
+}
+
 static bool IsWindowOnCurrentDesktop(HWND hwnd)
 {
     if (!g_vdm)
@@ -1759,18 +1841,45 @@ static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM)
     if ((exStyle & WS_EX_NOACTIVATE) != 0)
         return TRUE;
 
-    DWORD cloaked = 0;
-    if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked,
-                                        sizeof(cloaked))) &&
-        cloaked != 0)
-        return TRUE;
-
     DWORD pid = 0;
     GetWindowThreadProcessId(hwnd, &pid);
     if (!pid || pid == GetCurrentProcessId())
         return TRUE;
 
-    if (!IsWindowOnCurrentDesktop(hwnd))
+    // A window on an inactive desktop is normally DWM-cloaked, which is also
+    // how UWP hides suspended windows. Resolve its desktop first so all-desktop
+    // search can include the former without admitting cloaked windows on the
+    // current desktop.
+    GUID desktopId = {};
+    int desktopIndex = -1;
+    bool onCurrentDesktop = true;
+    if (g_vdm)
+    {
+        GUID id = {};
+        if (SUCCEEDED(g_vdm->GetWindowDesktopId(hwnd, &id)))
+        {
+            desktopId = id;
+            desktopIndex = DesktopIndexForId(id);
+        }
+        // The documented check is authoritative for "visible here", including
+        // windows pinned to every desktop, where the id may name only one of
+        // them.
+        onCurrentDesktop = IsWindowOnCurrentDesktop(hwnd);
+    }
+    // A window visible here but tagged with another desktop is pinned to all
+    // desktops; it has no single desktop label.
+    if (onCurrentDesktop && desktopIndex >= 0 &&
+        desktopIndex != g_currentDesktop)
+        desktopIndex = -1;
+
+    const bool otherDesktop = !onCurrentDesktop;
+    if (!g_searchAllDesktops && otherDesktop)
+        return TRUE;
+
+    DWORD cloaked = 0;
+    if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked,
+                                        sizeof(cloaked))) &&
+        cloaked != 0 && !(g_searchAllDesktops && otherDesktop))
         return TRUE;
 
     int length = GetWindowTextLengthW(hwnd);
@@ -1790,6 +1899,9 @@ static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM)
     entry.titleLower = ToLower(title);
     entry.app = BaseName(GetProcessImagePath(pid));
     entry.appLower = ToLower(entry.app);
+    entry.desktopId = desktopId;
+    entry.desktopIndex = desktopIndex;
+    entry.onCurrentDesktop = onCurrentDesktop;
     g_windows.push_back(std::move(entry));
     return TRUE;
 }
@@ -1817,6 +1929,19 @@ static void RebuildWindowList()
     ReleaseIcons();
     g_windows.clear();
     EnumWindows(EnumWindowsProc, 0);
+    if (g_searchAllDesktops)
+    {
+        // Keep z-order within each desktop, but group all-desktop results by
+        // desktop so the numbered labels read in a predictable order.
+        std::stable_sort(g_windows.begin(), g_windows.end(),
+                         [](const WindowEntry& a, const WindowEntry& b) {
+                             const int da =
+                                 a.desktopIndex < 0 ? 1000000 : a.desktopIndex;
+                             const int db =
+                                 b.desktopIndex < 0 ? 1000000 : b.desktopIndex;
+                             return da < db;
+                         });
+    }
     RebuildFilter();
     g_page = 0;
     if (g_selected >= static_cast<int>(g_filtered.size()))
@@ -2226,12 +2351,21 @@ static void MoveSelectedWindowToDesktopIndex(int index)
         return;
     if (index < 0 || index >= static_cast<int>(g_desktops.size()))
         return;
-    if (index == g_currentDesktop)
-        return;  // Already there.
 
     HWND window = SelectedWindow();
     if (!window)
         return;
+
+    // With all-desktop search the selected window need not live on the active
+    // desktop, so compare against the window's own desktop rather than
+    // assuming the current desktop is already the target.
+    if (g_vdm)
+    {
+        GUID current = {};
+        if (SUCCEEDED(g_vdm->GetWindowDesktopId(window, &current)) &&
+            IsEqualGUID(current, g_desktops[index].id))
+            return;
+    }
 
     ReleaseThumbnails();
     bool moved = MoveWindowToDesktopInternal(window, g_desktops[index].id);
@@ -2253,7 +2387,22 @@ static void MoveSelectedWindowToDesktop(int delta)
 {
     if (g_desktops.empty())
         return;
-    MoveSelectedWindowToDesktopIndex(g_currentDesktop + delta);
+
+    // In all-desktop search the selected window may live elsewhere, so step
+    // from its own desktop instead of the active one.
+    int base = g_currentDesktop;
+    HWND window = SelectedWindow();
+    if (window && g_vdm)
+    {
+        GUID id = {};
+        if (SUCCEEDED(g_vdm->GetWindowDesktopId(window, &id)))
+        {
+            const int index = DesktopIndexForId(id);
+            if (index >= 0)
+                base = index;
+        }
+    }
+    MoveSelectedWindowToDesktopIndex(base + delta);
 }
 
 // Switches to another virtual desktop while keeping the overview open.
@@ -2550,16 +2699,21 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
     if (g_busy)
         return;
 
-    SetChipLayersVisible(false);
-    ReleaseThumbnails();
     g_busy = true;
+    g_busySince = GetTickCount64();
     g_pendingDesktopTarget = -1;
     g_pendingDesktopTries = 0;
+    g_desktopActionCreate = false;
+    g_desktopActionClose = false;
+    g_desktopActionStartCount = static_cast<int>(g_desktops.size());
+    g_keepThumbnailsWhileBusy = false;
 
     bool direct = false;
     bool waitForCreateDraw = false;
+    bool switching = false;
     if (create)
     {
+        g_desktopActionCreate = true;
         // Pull a card from the deck first. The shell only creates the desktop
         // when the ghost lands, so the new tab never appears before the draw.
         StartDesktopCreateDraw();
@@ -2571,19 +2725,29 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
     {
         if (g_desktops.size() > 1)
         {
+            g_desktopActionClose = true;
             StartDesktopCardThrow(g_currentDesktop);
             SendChord(VK_F4, false);
+        }
+        else
+        {
+            g_busy = false;
+            g_busySince = 0;
+            return;
         }
     }
     else if (targetDesktop >= 0 &&
              targetDesktop < static_cast<int>(g_desktops.size()))
     {
+        switching = true;
+        // Set this before the shell call: any paint during the switch must keep
+        // the old thumbnails instead of releasing them.
+        g_keepThumbnailsWhileBusy = true;
         direct = SwitchDesktopDirect(g_desktops[targetDesktop].id);
-        if (direct)
-        {
-            g_pendingDesktopTarget = targetDesktop;
-        }
-        else
+        // Track the target for both the direct and chord fallback paths, so the
+        // desktop timer can stop polling as soon as the shell gets there.
+        g_pendingDesktopTarget = targetDesktop;
+        if (!direct)
         {
             const int delta = targetDesktop - g_currentDesktop;
             const int steps = std::min(std::abs(delta), 8);
@@ -2591,11 +2755,26 @@ static void BeginDesktopAction(int targetDesktop, bool create, bool closeActive)
                 SendChord(delta > 0 ? VK_RIGHT : VK_LEFT, true);
         }
     }
+    else
+    {
+        g_busy = false;
+        g_busySince = 0;
+        return;
+    }
+
+    // A plain tab switch keeps the current cards and thumbnails on screen until
+    // the shell reports the new desktop. Creating or closing a desktop still
+    // clears them immediately so the card ghost has a clean stage.
+    if (!switching)
+    {
+        SetChipLayersVisible(false);
+        ReleaseThumbnails();
+    }
 
     if (g_overlay && !waitForCreateDraw)
-        SetTimer(g_overlay, kTimerDesktop, direct ? 400 : 700, nullptr);
+        SetTimer(g_overlay, kTimerDesktop, 40, nullptr);
     KickCarousel();
-    InvalidateRect(g_overlay, nullptr, FALSE);
+    KickCardAnimation();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2955,7 +3134,8 @@ static int PillAt(float x, float y)
 
 static bool SearchVisible()
 {
-    return g_searchAlwaysVisible || g_searchFocused || !g_search.empty();
+    return g_searchAlwaysVisible || g_searchFocused || !g_search.empty() ||
+           g_searchAllDesktops;
 }
 
 static bool EntryIsHeld(int entry)
@@ -3169,7 +3349,7 @@ static void UpdateLayout()
             const float cx = left + cardW / 2.0f;
             const float cy = top + cardH / 2.0f;
             const float previewD =
-                cardW * (cardW >= 180.0f * s ? 0.68f : 0.60f);
+                cardW * (cardW >= 180.0f * s ? 0.64f : 0.60f);
             card.header = {left, top, left + cardW, top + headerH};
             card.preview = {cx - previewD / 2.0f, cy - previewD / 2.0f,
                             cx + previewD / 2.0f, cy + previewD / 2.0f};
@@ -3243,7 +3423,7 @@ static void UpdateLayout()
                 const float cx = left + itemW / 2.0f;
                 const float cy = y + itemH / 2.0f;
                 const float previewD =
-                    itemW * (itemW >= 180.0f * s ? 0.68f : 0.60f);
+                    itemW * (itemW >= 180.0f * s ? 0.64f : 0.60f);
                 card.header = {left, y, left + itemW, y + 24.0f * s};
                 card.preview = {cx - previewD / 2.0f, cy - previewD / 2.0f,
                                 cx + previewD / 2.0f, cy + previewD / 2.0f};
@@ -3738,8 +3918,9 @@ static void DrawChipBody(float cx, float cy, float r, UINT32 base, float holeR,
     FillChipDisc(cx, cy, r, holeR, paint.edge, alpha);
     FillChipDisc(cx, cy, r - edge, holeR, paint.face, alpha);
 
-    // Inserts stop at the pressed groove, a little over three quarters out.
-    const float spotInner = r * 0.78f;
+    // Inserts stop at the pressed groove. They sit close to the moulded edge so
+    // the wide clay band inside them has room for a printed title.
+    const float spotInner = r * 0.86f;
     FillChipEdgeSpots(cx, cy, r - edge * 0.5f, spotInner, spotCount, 0.23f,
                       paint.spot, 0.95f * alpha);
     StrokeEllipse(cx, cy, spotInner, spotInner, paint.groove, 1.0f * s,
@@ -3748,6 +3929,33 @@ static void DrawChipBody(float cx, float cy, float r, UINT32 base, float holeR,
                   0xFFFFFFFF, 0.7f * s, 0.10f * alpha);
 
     FillChipSheen(cx, cy, r, holeR, alpha);
+}
+
+// Four suit pips printed around the clay band, one every 90 degrees. They stay
+// upright so they read at any position instead of rotating with the arc.
+static void DrawChipSuitRing(float cx, float cy, float radius,
+                             float startDegrees, UINT32 color, float multiply)
+{
+    if (!g_d2dTarget || !g_d2dBrush || radius <= 0.0f)
+        return;
+    IDWriteTextFormat* format = g_fmtChipSuit ? g_fmtChipSuit : g_fmtHint;
+    if (!format)
+        return;
+
+    static const WCHAR* glyphs[] = {L"\u2660", L"\u2665", L"\u2666", L"\u2663"};
+    const float fontHeight = format->GetFontSize() * 1.2f;
+    const float boxWidth = format->GetFontSize() * 1.7f;
+    for (int i = 0; i < 4; i++)
+    {
+        const float degrees = startDegrees + static_cast<float>(i) * 90.0f;
+        const float angle = degrees * 3.14159265f / 180.0f;
+        const float x = cx + std::cos(angle) * radius;
+        const float y = cy + std::sin(angle) * radius;
+        const RectF rect = {x - boxWidth / 2.0f, y - fontHeight / 2.0f,
+                            x + boxWidth / 2.0f, y + fontHeight / 2.0f};
+        DrawTextBlock(glyphs[i], format, rect, color,
+                      DWRITE_TEXT_ALIGNMENT_CENTER, multiply);
+    }
 }
 
 // A desktop rendered as a playing card: rank in the corners, suit pip, and the
@@ -3782,12 +3990,12 @@ static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
     FillRound(face, radius,
               hovered ? MixColor(faceColor, 0xFFE4DCC8, 0.55f) : faceColor,
               alpha);
-    if (g_desktopSelection == DesktopSelection::Highlight && (selected || active))
-        StrokeRound(face, radius, g_theme.accent, (selected ? 2.6f : 2.0f) * s,
-                    0.95f * alpha);
-    else
-        StrokeRound(face, radius, ink, 1.0f * s,
-                    (active ? 0.38f : 0.30f) * alpha);
+    // Playing cards keep their printed ink border; selection never repaints it
+    // with the accent color. A selected card gets a slightly heavier edge.
+    const bool marked = selected || active;
+    StrokeRound(face, radius, ink,
+                (selected ? 2.0f : marked ? 1.3f : 1.0f) * s,
+                (selected ? 0.55f : marked ? 0.40f : 0.30f) * alpha);
     const RectF inner = {face.l + 5.0f * s, face.t + 5.0f * s,
                          face.r - 5.0f * s, face.b - 5.0f * s};
     StrokeRound(inner, std::max(2.0f * s, radius - 4.0f * s), ink, 1.0f * s,
@@ -4055,7 +4263,7 @@ static void FinishDesktopCreateAfterDraw()
     SendChord('D', false);
     if (g_overlay)
     {
-        SetTimer(g_overlay, kTimerDesktop, 700, nullptr);
+        SetTimer(g_overlay, kTimerDesktop, 40, nullptr);
         InvalidateRect(g_overlay, nullptr, FALSE);
     }
     KickCarousel();
@@ -4285,7 +4493,7 @@ static void DrawChipTab(const PillView& pill, bool active, bool hovered,
     DrawChipBody(cx, cy, r, chipColor, 0.0f, alpha);
 
     // Cream inlay for the desktop number, framed by a pressed ring and a ring
-    // of tiny moulded marks, like the centre of a real casino chip.
+    // of suit pips, like the centre of a real casino chip.
     const ChipPaint paint = ChipPaintFor(chipColor);
     const float discR = r * 0.58f;
     FillEllipse(cx, cy, discR + 1.6f * s, discR + 1.6f * s, paint.edge,
@@ -4294,8 +4502,7 @@ static void DrawChipTab(const PillView& pill, bool active, bool hovered,
     StrokeEllipse(cx, cy, discR * 0.86f, discR * 0.86f,
                   MixColor(paint.inlay, chipColor, 0.42f), 0.8f * s,
                   0.55f * alpha);
-    FillChipEdgeSpots(cx, cy, r * 0.72f, r * 0.675f, 12, 0.055f, paint.spot,
-                      0.55f * alpha);
+    DrawChipSuitRing(cx, cy, r * 0.72f, 0.0f, paint.spot, 0.62f * alpha);
 
     const RectF disc = {cx - discR, cy - discR, cx + discR, cy + discR};
     DrawTextBlock(std::to_wstring(pill.desktop + 1), g_fmtPillLarge, disc,
@@ -4352,6 +4559,17 @@ static void DrawChipTab(const PillView& pill, bool active, bool hovered,
     }
 }
 
+// In all-desktop search, prefix every result with its desktop number so the
+// mixed list is readable even though live thumbnails are only available for the
+// active desktop.
+static std::wstring WindowDisplayTitle(const WindowEntry& entry)
+{
+    if (!g_searchAllDesktops || entry.desktopIndex < 0)
+        return entry.title;
+    return L"D" + std::to_wstring(entry.desktopIndex + 1) + L"  \u00B7  " +
+           entry.title;
+}
+
 // A window rendered as a regular preview card.
 static void DrawWindowCard(const CardView& card, bool selected, bool hovered,
                            bool closeHovered)
@@ -4373,9 +4591,10 @@ static void DrawWindowCard(const CardView& card, bool selected, bool hovered,
         selected ? g_theme.cardSelected
                  : (hovered ? g_theme.cardHover : g_theme.cardFill);
     FillRound(rect, radius, fill, 1.0f);
-    StrokeRound(rect, radius, selected ? g_theme.accent : g_theme.text,
-                1.4f * s,
-                selected ? 0.95f : (hovered ? 0.16f : 0.08f));
+    // Keep card selection in the fill and a neutral edge; cards do not use the
+    // accent outline that pills and chips use.
+    StrokeRound(rect, radius, g_theme.text, 1.4f * s,
+                selected ? 0.32f : (hovered ? 0.16f : 0.08f));
 
     const UINT32 heldColor =
         (card.entry >= 0 && card.entry < static_cast<int>(g_windows.size()))
@@ -4392,11 +4611,26 @@ static void DrawWindowCard(const CardView& card, bool selected, bool hovered,
         return;
 
     WindowEntry& entry = g_windows[card.entry];
+    const bool iconFallback = !entry.onCurrentDesktop;
+    float fallbackIconSize = 0.0f;
+    ID2D1Bitmap* fallbackIcon = nullptr;
+    if (iconFallback)
+    {
+        const float iconMax = std::min(preview.W(), preview.H()) * 0.42f;
+        fallbackIconSize = std::max(8.0f * s, std::min(48.0f * s, iconMax));
+        fallbackIcon = EnsureEntryIcon(
+            entry, static_cast<int>(std::lround(fallbackIconSize)));
+    }
+
     float textX = header.l + 14.0f * s;
     if (g_showIcons)
     {
-        const int iconPixels = static_cast<int>(std::lround(18.0f * s));
-        ID2D1Bitmap* icon = EnsureEntryIcon(entry, iconPixels);
+        // Off-desktop cards reuse the larger preview icon for the header so the
+        // per-entry icon cache does not thrash between two sizes every frame.
+        ID2D1Bitmap* icon = fallbackIcon;
+        if (!icon && !iconFallback)
+            icon = EnsureEntryIcon(
+                entry, static_cast<int>(std::lround(18.0f * s)));
         if (icon)
         {
             const float iconSize =
@@ -4416,7 +4650,7 @@ static void DrawWindowCard(const CardView& card, bool selected, bool hovered,
         header.r - (closeHovered ? 34.0f * s : 12.0f * s), header.b};
     IDWriteTextFormat* titleFormat =
         header.H() >= 28.0f * s ? g_fmtCard : g_fmtHint;
-    DrawTextBlock(entry.title, titleFormat, titleRect, g_theme.text,
+    DrawTextBlock(WindowDisplayTitle(entry), titleFormat, titleRect, g_theme.text,
                   DWRITE_TEXT_ALIGNMENT_LEADING, 0.94f);
 
     if (closeHovered)
@@ -4437,6 +4671,21 @@ static void DrawWindowCard(const CardView& card, bool selected, bool hovered,
 
     FillRound(preview, 6.0f * s, g_theme.previewFill, 1.0f);
     StrokeRound(preview, 6.0f * s, g_theme.text, 1.0f * s, 0.07f);
+
+    // Inactive desktops are cloaked, so DWM cannot provide a live thumbnail.
+    // Show the application icon in the preview instead of an empty rectangle.
+    if (iconFallback && fallbackIcon)
+    {
+        const float centerX = (preview.l + preview.r) / 2.0f;
+        const float centerY = (preview.t + preview.b) / 2.0f;
+        const D2D1_RECT_F dest = D2D1::RectF(
+            centerX - fallbackIconSize / 2.0f,
+            centerY - fallbackIconSize / 2.0f,
+            centerX + fallbackIconSize / 2.0f,
+            centerY + fallbackIconSize / 2.0f);
+        g_d2dTarget->DrawBitmap(fallbackIcon, &dest, 0.90f,
+                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+    }
 }
 
 // A window rendered as a poker chip. The DWM preview, app icon or an empty
@@ -4487,10 +4736,13 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
     StrokeEllipse(cx, cy, previewR + 2.4f * s, previewR + 2.4f * s,
                   paint.inlay, 0.8f * s, 0.32f);
 
-    if (!mask && g_windowChipContent == WindowChipContent::Icon)
+    if (!mask && (g_windowChipContent == WindowChipContent::Icon ||
+                  (g_windowChipContent == WindowChipContent::Preview &&
+                   !entry.onCurrentDesktop)))
     {
-        FillEllipse(cx, cy, r * 0.34f, r * 0.34f,
-                    MixColor(base, 0xFFFFFFFF, 0.16f), 1.0f);
+        if (g_windowChipContent == WindowChipContent::Icon)
+            FillEllipse(cx, cy, r * 0.34f, r * 0.34f,
+                        MixColor(base, 0xFFFFFFFF, 0.16f), 1.0f);
         ID2D1Bitmap* icon = EnsureEntryIcon(
             entry, static_cast<int>(std::lround(64.0f * s)));
         if (icon)
@@ -4499,7 +4751,7 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
             const D2D1_RECT_F dest = D2D1::RectF(
                 cx - iconSize / 2.0f, cy - iconSize / 2.0f,
                 cx + iconSize / 2.0f, cy + iconSize / 2.0f);
-            g_d2dTarget->DrawBitmap(icon, &dest, 1.0f,
+            g_d2dTarget->DrawBitmap(icon, &dest, 0.92f,
                                     D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
     }
@@ -4507,14 +4759,18 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
 
     // Keep the title in the clay band between the centre inlay and the edge
     // inserts, where a real chip prints its text, instead of on top of the
-    // preview or the inlaid spots.
-    const float titleRadius = previewR + (r * 0.78f - previewR) * 0.5f;
+    // preview or the inlaid spots. Centring it in the clear band keeps both
+    // rings from crowding the glyphs.
     IDWriteTextFormat* titleFormat =
-        r >= 130.0f * s ? g_fmtPillLarge
+        r >= 120.0f * s ? g_fmtPillLarge
         : r >= 80.0f * s ? g_fmtPill
                          : g_fmtHint;
-    DrawArcText(entry.title, titleFormat, cx, cy, titleRadius, textColor,
-                170.0f, 0.95f);
+    const float titleInner = previewR + 3.6f * s;
+    const float titleOuter = r * 0.86f - 1.6f * s;
+    const float titleRadius = (titleInner + titleOuter) * 0.5f;
+    DrawChipSuitRing(cx, cy, titleRadius, 22.5f, paint.spot, 0.62f);
+    DrawArcText(WindowDisplayTitle(entry), titleFormat, cx, cy, titleRadius,
+                textColor, 170.0f, 0.95f);
 
     const UINT32 heldColor = HeldColorOf(entry.hwnd);
     if (selected)
@@ -4805,7 +5061,7 @@ static void RenderScene(HDC dc)
     std::vector<RectF> overlayRects;
     std::vector<HWND> chipSources;
     std::vector<RectF> chipRects;
-    if (!g_busy && contentAlpha > 0.02f)
+    if ((!g_busy || g_keepThumbnailsWhileBusy) && contentAlpha > 0.02f)
     {
         auto addThumbnails = [&](const std::vector<CardView>& cards,
                                  std::vector<HWND>& sources,
@@ -4814,6 +5070,10 @@ static void RenderScene(HDC dc)
             {
                 if (card.entry < 0 ||
                     card.entry >= static_cast<int>(g_windows.size()))
+                    continue;
+                // Windows on inactive desktops are cloaked, so a DWM thumbnail
+                // would be black. Their cards draw an icon fallback instead.
+                if (!g_windows[card.entry].onCurrentDesktop)
                     continue;
                 HWND source = g_windows[card.entry].hwnd;
                 if (!source || !IsWindow(source))
@@ -4879,10 +5139,11 @@ static void RenderScene(HDC dc)
     if (SearchVisible())
     {
         const float searchRadius = g_layout.search.H() / 2.0f;
+        const bool searchAccent = g_searchFocused || g_searchAllDesktops;
         FillRound(g_layout.search, searchRadius, g_theme.searchFill, 0.95f);
         StrokeRound(g_layout.search, searchRadius,
-                    g_searchFocused ? g_theme.accent : g_theme.text, 1.25f * s,
-                    g_searchFocused ? 0.85f : 0.10f);
+                    searchAccent ? g_theme.accent : g_theme.text, 1.25f * s,
+                    searchAccent ? 0.85f : 0.10f);
 
         // Magnifier glyph.
         {
@@ -4897,14 +5158,22 @@ static void RenderScene(HDC dc)
                                   g_d2dBrush, 1.6f * s);
         }
 
+        const std::wstring allDesktopsLabel = L"All desktops";
+        const float allDesktopsW =
+            (g_searchAllDesktops && !g_search.empty())
+                ? MeasureTextWidth(allDesktopsLabel, g_fmtHint) + 18.0f * s
+                : 0.0f;
         const float textLeft = g_layout.search.l + 42.0f * s;
         const float textRight =
-            g_layout.search.r - (g_search.empty() ? 16.0f * s : 44.0f * s);
+            g_layout.search.r - (g_search.empty() ? 16.0f * s : 44.0f * s) -
+            (allDesktopsW > 0.0f ? allDesktopsW + 8.0f * s : 0.0f);
         const RectF searchTextRect = {textLeft, g_layout.search.t, textRight,
                                       g_layout.search.b};
         if (g_search.empty())
         {
-            DrawTextBlock(L"Search windows", g_fmtSearch, searchTextRect, g_theme.text,
+            DrawTextBlock(g_searchAllDesktops ? L"Search all desktops"
+                                              : L"Search windows",
+                          g_fmtSearch, searchTextRect, g_theme.text,
                           DWRITE_TEXT_ALIGNMENT_LEADING, 0.40f);
         }
         else
@@ -4933,6 +5202,17 @@ static void RenderScene(HDC dc)
             g_d2dTarget->DrawLine(D2D1::Point2F(ccx + arm, ccy - arm),
                                   D2D1::Point2F(ccx - arm, ccy + arm), g_d2dBrush,
                                   1.5f * s);
+        }
+
+        if (g_searchAllDesktops && !g_search.empty())
+        {
+            const float badgeRight = g_layout.search.r - 44.0f * s;
+            const float badgeLeft = badgeRight - allDesktopsW;
+            const RectF badge = {badgeLeft, g_layout.search.t + 7.0f * s,
+                                 badgeRight, g_layout.search.b - 7.0f * s};
+            FillRound(badge, badge.H() / 2.0f, g_theme.accent, 0.16f);
+            DrawTextBlock(allDesktopsLabel, g_fmtHint, badge, g_theme.accent,
+                          DWRITE_TEXT_ALIGNMENT_CENTER, 0.92f);
         }
 
         // Caret.
@@ -5008,7 +5288,8 @@ static void RenderScene(HDC dc)
     if (g_cards.empty() && g_dockCards.empty() && !g_busy)
     {
         const std::wstring message = g_search.empty()
-            ? L"No windows on this desktop"
+            ? (g_searchAllDesktops ? L"No windows on any desktop"
+                                   : L"No windows on this desktop")
             : L"No windows match your search";
         DrawTextBlock(message, g_fmtEmpty, g_layout.grid, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_CENTER, 0.55f);
@@ -5246,9 +5527,12 @@ static void RenderScene(HDC dc)
         DrawTextBlock(hint, g_fmtHint, hintRect, g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_LEADING, 0.42f);
 
-    // Busy indicator (desktop switching). Suppress it while the pre-create card
-    // is being drawn and while the overlay is fading out.
-    if (g_busy && !g_createAfterDraw && g_targetPresence > 0.0f)
+    // Busy indicator (desktop switching). Suppress it for fast switches, while
+    // a card animation is running, and while the overlay is fading out.
+    if (g_busy && !g_createAfterDraw &&
+        g_cardAnim.mode == CardAnimationMode::None &&
+        g_targetPresence > 0.0f && g_busySince != 0 &&
+        GetTickCount64() - g_busySince > 500)
     {
         const float pcx = g_layout.w / 2.0f;
         const float pcy = g_layout.h / 2.0f;
@@ -5279,7 +5563,8 @@ static void RenderScene(HDC dc)
     // thumbnail corners never peek through during the fade.
     const bool showChipLayers =
         UsesWindowChips() && g_windowChipContent == WindowChipContent::Preview &&
-        !g_busy && contentAlpha > 0.98f && !chipSources.empty();
+        (!g_busy || g_keepThumbnailsWhileBusy) &&
+        contentAlpha > 0.98f && !chipSources.empty();
     if (showChipLayers)
     {
         SetChipLayersVisible(true);
@@ -5329,6 +5614,13 @@ static void StopOverlayTimers()
     KillTimer(g_overlay, kTimerCarousel);
     g_pendingDesktopTarget = -1;
     g_pendingDesktopTries = 0;
+    g_pendingActivateWindow = nullptr;
+    g_pendingActivateDesktop = -1;
+    g_desktopActionCreate = false;
+    g_desktopActionClose = false;
+    g_desktopActionStartCount = 0;
+    g_busySince = 0;
+    g_keepThumbnailsWhileBusy = false;
 }
 
 static void ForceForeground(HWND hwnd)
@@ -5560,6 +5852,7 @@ static void ShowOverlay()
     g_search.clear();
     g_searchFocused = false;
     g_searchSelectAll = false;
+    g_searchAllDesktops = false;
     g_renameDesktop = -1;
     g_renameText.clear();
     g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
@@ -5568,6 +5861,15 @@ static void ShowOverlay()
     g_createDragging = false;
     g_createPull = 0.0f;
     g_busy = false;
+    g_busySince = 0;
+    g_desktopActionCreate = false;
+    g_desktopActionClose = false;
+    g_desktopActionStartCount = 0;
+    g_pendingDesktopTarget = -1;
+    g_pendingDesktopTries = 0;
+    g_pendingActivateWindow = nullptr;
+    g_pendingActivateDesktop = -1;
+    g_keepThumbnailsWhileBusy = false;
     g_pendingMove = false;
 
     RefreshDesktops();
@@ -5607,8 +5909,11 @@ static void FinishHide()
     g_busy = false;
     g_pendingMove = false;
     g_focusDock = false;
+    g_searchAllDesktops = false;
     g_pendingDesktopTarget = -1;
     g_pendingDesktopTries = 0;
+    g_pendingActivateWindow = nullptr;
+    g_pendingActivateDesktop = -1;
     ClearCardAnimation();
     SetControlReady(true);
 }
@@ -5617,6 +5922,11 @@ static void HideOverlay(bool immediate)
 {
     if (!g_visible)
         return;
+
+    // A hide cancels a pending cross-desktop activation; the timer path copies
+    // the target before calling this when it is about to activate it.
+    g_pendingActivateWindow = nullptr;
+    g_pendingActivateDesktop = -1;
 
     if (g_createDragging)
     {
@@ -5659,6 +5969,29 @@ static void ActivateWindowEntry(int entry)
     HWND target = g_windows[entry].hwnd;
     if (!target || !IsWindow(target))
         return;
+
+    // The window may have moved since the list was built, so resolve its
+    // desktop again. A result from another desktop switches there first and
+    // lets kTimerDesktop finish the activation once the shell has landed.
+    if (g_vdm)
+    {
+        GUID id = {};
+        if (SUCCEEDED(g_vdm->GetWindowDesktopId(target, &id)))
+        {
+            const int desktopIndex = DesktopIndexForId(id);
+            if (desktopIndex >= 0 && desktopIndex != g_currentDesktop &&
+                !IsWindowOnCurrentDesktop(target))
+            {
+                if (g_busy)
+                    return;
+                g_pendingActivateWindow = target;
+                g_pendingActivateDesktop = desktopIndex;
+                g_desktopSelected = desktopIndex;
+                BeginDesktopAction(desktopIndex, false, false);
+                return;
+            }
+        }
+    }
 
     g_closingForActivation = true;
     HideOverlay(true);
@@ -5766,6 +6099,55 @@ static void SetSearch(const std::wstring& text)
     InvalidateRect(g_overlay, nullptr, FALSE);
 }
 
+static void SetSearchAllDesktops(bool all)
+{
+    if (g_searchAllDesktops == all || g_busy)
+        return;
+
+    g_searchAllDesktops = all;
+    SetChipLayersVisible(false);
+    ReleaseThumbnails();
+    RebuildWindowList();
+    g_selected = 0;
+    RebuildDisplayList();
+    g_selected = g_display.empty() ? -1 : g_display.front();
+    g_page = 0;
+    g_hoverCard = g_hoverClose = g_hoverDock = g_hoverDockClose = -1;
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
+static void ExitSearch()
+{
+    const bool hadAllDesktops = g_searchAllDesktops;
+    // Leaving all-desktop mode re-enumerates the window list; defer that while a
+    // desktop action is in flight. Current-desktop search can still be cleared.
+    if (g_busy && hadAllDesktops)
+        return;
+
+    g_searchFocused = false;
+    g_searchSelectAll = false;
+    g_search.clear();
+    g_searchAllDesktops = false;
+
+    if (hadAllDesktops)
+    {
+        SetChipLayersVisible(false);
+        ReleaseThumbnails();
+        RebuildWindowList();
+    }
+    else
+    {
+        RebuildFilter();
+    }
+
+    g_selected = 0;
+    RebuildDisplayList();
+    g_selected = g_display.empty() ? -1 : g_display.front();
+    g_page = 0;
+    g_hoverCard = g_hoverClose = g_hoverDock = g_hoverDockClose = -1;
+    InvalidateRect(g_overlay, nullptr, FALSE);
+}
+
 static void FocusSearch()
 {
     g_searchFocused = true;
@@ -5867,7 +6249,7 @@ static void OnLeftClick(int x, int y)
     }
 
     // Clicking anywhere else takes the field out of focus, so the letter keys
-    // go back to navigation and a hidden search bar stays hidden.
+    // go back to navigation; all-desktop mode stays active until Esc or '/'.
     if (g_searchFocused)
     {
         g_searchFocused = false;
@@ -6104,9 +6486,7 @@ static void OnKeyDown(WPARAM key)
     {
         if (key == VK_ESCAPE)
         {
-            SetSearch(L"");
-            g_searchFocused = false;
-            InvalidateRect(g_overlay, nullptr, FALSE);
+            ExitSearch();
         }
         else if (key == VK_RETURN)
         {
@@ -6159,11 +6539,9 @@ static void OnKeyDown(WPARAM key)
             g_focusDock = false;
             InvalidateRect(g_overlay, nullptr, FALSE);
         }
-        else if (g_searchFocused || !g_search.empty())
+        else if (g_searchFocused || !g_search.empty() || g_searchAllDesktops)
         {
-            SetSearch(L"");
-            g_searchFocused = false;
-            InvalidateRect(g_overlay, nullptr, FALSE);
+            ExitSearch();
         }
         else
         {
@@ -6485,18 +6863,46 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             return 0;
         const int x = GET_X_LPARAM(lParam);
         const int y = GET_Y_LPARAM(lParam);
-        const int pillIndex = PillAt(static_cast<float>(x), static_cast<float>(y));
-        if (pillIndex >= 0)
+        const float fx = static_cast<float>(x);
+        const float fy = static_cast<float>(y);
+
+        if (IsRenamingDesktop())
         {
-            const int desktop = g_pills[pillIndex].desktop;
-            if (IsRenamingDesktop())
-            {
-                if (desktop == g_renameDesktop)
-                    return 0;  // Already editing this desktop.
-                CommitRenameDesktop();
-            }
-            BeginRenameDesktop(desktop);
+            const int pillIndex = PillAt(fx, fy);
+            if (pillIndex >= 0 && g_pills[pillIndex].desktop == g_renameDesktop)
+                return 0;  // Already editing this desktop.
+            CommitRenameDesktop();
         }
+
+        // Right-clicking a window card or dock item toggles its held state
+        // without activating it. Desktop pills keep their rename gesture.
+        for (const CardView& card : g_cards)
+        {
+            if (!Contains(card.hit, fx, fy) && !Contains(card.rect, fx, fy))
+                continue;
+            if (card.filtered >= 0)
+                g_selected = card.filtered;
+            if (card.entry >= 0 &&
+                card.entry < static_cast<int>(g_windows.size()))
+                ToggleHoldWindow(g_windows[card.entry].hwnd);
+            return 0;
+        }
+
+        for (const CardView& card : g_dockCards)
+        {
+            if (!Contains(card.hit, fx, fy) && !Contains(card.rect, fx, fy))
+                continue;
+            if (card.filtered >= 0)
+                g_selected = card.filtered;
+            if (card.entry >= 0 &&
+                card.entry < static_cast<int>(g_windows.size()))
+                ToggleHoldWindow(g_windows[card.entry].hwnd);
+            return 0;
+        }
+
+        const int pillIndex = PillAt(fx, fy);
+        if (pillIndex >= 0)
+            BeginRenameDesktop(g_pills[pillIndex].desktop);
         return 0;
     }
 
@@ -6589,12 +6995,30 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             return 0;
         }
 
-        // The search field has to be focused first (click it or press '/'); until
-        // then, printable keys are available to navigation commands only.
+        // The search field has to be focused first (click it, press '/' for the
+        // current desktop, or '?' for every desktop); until then, printable keys
+        // are available to navigation commands only.
         if (!g_searchFocused)
         {
+            // Shift+/ produces '?' on most layouts. '/' searches the current
+            // desktop; '?' switches the same field to every virtual desktop.
+            const bool shiftDown = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+            if (ch == L'?' || (ch == L'/' && shiftDown))
+            {
+                // Switching modes re-enumerates the window list, which must wait
+                // for an in-flight desktop action to finish.
+                if (g_busy)
+                    return 0;
+                SetSearchAllDesktops(true);
+                FocusSearch();
+                return 0;
+            }
+
             if (ch == L'/')
             {
+                if (g_busy && g_searchAllDesktops)
+                    return 0;
+                SetSearchAllDesktops(false);
                 FocusSearch();
                 return 0;
             }
@@ -6780,20 +7204,36 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         if (wParam == kTimerDesktop)
         {
             RefreshDesktops();
-            // A direct switch animates, so the desktop may not have changed yet;
-            // poll briefly before declaring the action finished.
-            if (g_pendingDesktopTarget >= 0 &&
-                g_currentDesktop != g_pendingDesktopTarget &&
-                ++g_pendingDesktopTries < 10)
+            // The shell animates desktop changes, so poll quickly until the
+            // action has actually landed instead of waiting a fixed 400-700 ms.
+            bool done = true;
+            if (g_desktopActionCreate)
+                done = static_cast<int>(g_desktops.size()) >
+                       g_desktopActionStartCount;
+            else if (g_desktopActionClose)
+                done = static_cast<int>(g_desktops.size()) <
+                       g_desktopActionStartCount;
+            else if (g_pendingDesktopTarget >= 0)
+                done = g_currentDesktop == g_pendingDesktopTarget;
+
+            const int maxTries =
+                (g_desktopActionCreate || g_desktopActionClose) ? 25 : 50;
+            if (!done && ++g_pendingDesktopTries < maxTries)
             {
-                SetTimer(hwnd, kTimerDesktop, 120, nullptr);
+                SetTimer(hwnd, kTimerDesktop, 40, nullptr);
                 return 0;
             }
 
             KillTimer(hwnd, kTimerDesktop);
             g_busy = false;
+            g_busySince = 0;
+            g_desktopActionCreate = false;
+            g_desktopActionClose = false;
+            g_desktopActionStartCount = 0;
             g_pendingDesktopTarget = -1;
             g_pendingDesktopTries = 0;
+            g_keepThumbnailsWhileBusy = false;
+
             // Carry held tasks right away instead of waiting for the watcher.
             GUID active = {};
             if (ReadActiveDesktopId(&active))
@@ -6802,6 +7242,27 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 g_hasWatchedDesktop = true;
                 MoveHeldTasksToDesktop(active, false);
             }
+
+            // A window chosen from an all-desktop search is activated only
+            // after its desktop is actually active. The overlay stays up until
+            // the shell finishes the switch, then closes onto the window.
+            HWND activateTarget = g_pendingActivateWindow;
+            const int activateDesktop = g_pendingActivateDesktop;
+            g_pendingActivateWindow = nullptr;
+            g_pendingActivateDesktop = -1;
+            if (activateTarget && IsWindow(activateTarget) &&
+                (activateDesktop < 0 || IsWindowOnCurrentDesktop(activateTarget)))
+            {
+                g_closingForActivation = true;
+                HideOverlay(true);
+                g_closingForActivation = false;
+                if (IsIconic(activateTarget))
+                    ShowWindow(activateTarget, SW_RESTORE);
+                if (!SetForegroundWindow(activateTarget))
+                    SwitchToThisWindow(activateTarget, TRUE);
+                return 0;
+            }
+
             RebuildWindowList();
             g_desktopSelected = g_currentDesktop;
             KickCarousel();
@@ -7055,8 +7516,13 @@ static DWORD WINAPI UiThreadProc(LPVOID)
                     if (hadPendingCreate)
                     {
                         g_busy = false;
+                        g_busySince = 0;
+                        g_desktopActionCreate = false;
+                        g_desktopActionClose = false;
+                        g_desktopActionStartCount = 0;
                         g_pendingDesktopTarget = -1;
                         g_pendingDesktopTries = 0;
+                        g_keepThumbnailsWhileBusy = false;
                     }
                 }
                 // The accent blur only takes effect while the overlay is hidden

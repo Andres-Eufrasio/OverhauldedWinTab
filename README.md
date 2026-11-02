@@ -20,11 +20,13 @@ from scratch in native C++ on top of Win32, Direct2D, DirectWrite and DWM.
 - Full-screen Task View overlay for the active monitor
 - Live window previews using real DWM thumbnails
 - Adaptive card grid that scales with the number of windows
-- Search across window titles and applications (press `/` to start typing)
+- Search across window titles and applications on the current desktop, or across
+  every virtual desktop with `Shift` + `/`
 - Optional poker-chip window tabs with a circular live preview, app icon or
   name-only centre, in four sizes
 - Optional playing-card, poker-chip and carousel desktop tabs
-- Accent-outline or pick-up/lift selection for every desktop tab style
+- Selection styles for desktop tabs: accent outlines for pills and chips, plus
+  an optional lift for any tab shape
 - Held windows can move into a left or right side dock, with full keyboard
   access and an optional floating (background-free) dock
 - Optional lift on window hover and keyboard selection
@@ -84,10 +86,12 @@ primitives, so it stays crisp at every DPI and card size.
 | `N` | Create a new virtual desktop (strip focused) |
 | `h` `j` `k` `l` | Vim movement through the grid, held dock or desktop strip |
 | `/` | Focus the search field (reveals it when hidden) |
+| `Shift` + `/` (`?`) | Focus the search field and search every virtual desktop |
 | `x` | Close the selected window or dock item (Vim) |
 | Typing while the search is focused | Filter windows by title or application |
 | Left click | Activate a window, or jump straight to a desktop |
-| Right click a desktop | Rename that virtual desktop |
+| Right click a desktop tab | Rename that virtual desktop |
+| Right click a window card or dock item | Hold or release that window |
 | Middle click on a card or dock item | Close that window |
 | Click a held dock item | Activate that window |
 | Click the create control on the strip | Create a new virtual desktop (a `+`, or the face-down card) |
@@ -96,14 +100,16 @@ primitives, so it stays crisp at every DPI and card size.
 | Mouse wheel | Move through grid pages |
 
 The search field is only typed into once it has focus: click it or press `/`
-first. With **Always show search** turned off the field stays hidden until you
-press `/`. Until the field has focus the letter keys are available to navigation,
-so a query that contains `h`, `j`, `k`, `l`, `n` or `x` never collides with a
-command. Focusing a field that already has a query selects it, so the next typed
-character replaces the old query. Set **Vim navigation** to `off` to disable the
-movement keys.
+first (or `Shift` + `/` for all-desktop search). With **Always show search**
+turned off the field stays hidden until you press `/` or `?`. Until the field
+has focus the letter keys are available to navigation, so a query that contains
+`h`, `j`, `k`, `l`, `n` or `x` never collides with a command. Focusing a field
+that already has a query selects it, so the next typed character replaces the
+old query. Set **Vim navigation** to `off` to disable the movement keys.
 
 ## Settings
+
+### Appearance
 
 | Setting | Description |
 | ------- | ----------- |
@@ -113,30 +119,60 @@ movement keys.
 | Background | Backdrop effect: Acrylic, Mica, Mica Alt, Blur, Solid or Transparent |
 | Background color | Tint color of the overview panel, in `#RRGGBB` format (Custom theme) |
 | Background opacity | How strong the panel tint is over the backdrop (`0`-`100`) |
-| Show window icons | Show each window's application icon in its card header |
 | Show hints | Show the keyboard shortcut hints at the bottom left |
 | Always show search | Keep the search bar visible; when off, press `/` to reveal it |
-| Window tabs | Square previews, or poker chips with the window title curved around the centre inlay |
+| Animation speed | Relative speed of the open, close and playing-card animations |
+
+### Window tabs
+
+| Setting | Description |
+| ------- | ----------- |
+| Window tab style | Square previews, or poker chips with the window title curved around the centre inlay |
 | Window chip content | Live window preview, app icon, or name only |
 | Window chip size | Small, medium, large or extra-large poker-chip window tabs |
+| Show window icons | Show each window's application icon in its card header |
+| Lift hovered windows | Raise a window while the pointer is over it |
+| Lift selected window | Raise the keyboard-selected window in the grid |
+
+### Chips
+
+| Setting | Description |
+| ------- | ----------- |
 | Chip colors | Theme accent shades, a single color, a custom palette, or classic casino colors |
 | Chip color | Single chip color in `#RRGGBB` format (Single color mode) |
 | Chip palette | Comma-separated `#RRGGBB` colors cycled across desktop and window chips (Custom palette mode) |
-| Desktop selection | Accent outline, or pick-up/lift for the selected and active desktop tabs |
-| Held windows | Keep held windows in the grid, or dock them on the left or right |
-| Held dock background | Show a panel behind the dock; turn off for a floating dock |
-| Lift held windows | Raise windows held with `U` so they look picked up |
-| Lift hovered windows | Raise a window while the pointer is over it |
-| Lift selected window | Raise the keyboard-selected window in the grid |
-| Desktop strip | Flat row or rotating carousel |
+
+### Desktop strip
+
+| Setting | Description |
+| ------- | ----------- |
+| Desktop strip layout | Flat row or rotating carousel |
 | Desktop tabs | Pills, poker chips, or playing cards |
-| Card size | Small, medium or large playing cards |
 | Desktop strip background | Panel behind the tabs: Auto (flat only), Always show, or Always hide |
-| Animation speed | Relative speed of the open, close and playing-card animations |
+| Desktop selection | Accent outline for pills and chips, or pick-up/lift for the selected and active tabs; playing cards keep their printed border |
+| Wrap desktop strip | `Left`/`Right` and `h`/`l` wrap from the last desktop to the first |
+
+### Playing cards
+
+| Setting | Description |
+| ------- | ----------- |
+| Card size | Small, medium or large playing cards |
 | Card animations | Animate the playing-card draw and throw when creating or closing a desktop |
+
+### Held windows
+
+| Setting | Description |
+| ------- | ----------- |
+| Held window placement | Keep held windows in the grid, or dock them on the left or right |
+| Held dock background | Show a panel behind the dock; turn off for a floating dock |
+| Lift held windows | Raise held windows so they look picked up |
+
+### Behavior
+
+| Setting | Description |
+| ------- | ----------- |
 | Close when focus is lost | Dismiss the overview when it loses activation |
 | Wrap grid navigation | Arrow keys wrap around the edges of the grid |
-| Wrap desktop strip | `Left`/`Right` and `h`/`l` wrap from the last desktop to the first |
 | Vim navigation | Enable `h` `j` `k` `l`, `/` and `x` navigation keys |
 
 **Background** controls what sits behind the panel:
@@ -178,7 +214,7 @@ still controls how strongly the panel tint covers the backdrop in every theme.
 
 ## Desktop strip
 
-**Desktop strip** chooses how the virtual desktops are laid out at the bottom:
+**Desktop strip layout** chooses how the virtual desktops are laid out at the bottom:
 
 - **Flat row** (default) – every desktop in a single row, with the create button
   after them and the strip panel behind them.
@@ -210,11 +246,13 @@ one tosses its card up and off the strip. The card animations use the same
 **Animation speed** as the open and close transitions.
 
 **Desktop selection** changes how the active and selected desktop tabs are
-marked. **Accent outline** (default) keeps the current accent border. **Lift**
-raises the selected tab, or the active tab when the strip is not focused, and
-skips the accent outline so the pick-up is the only selection cue. Lift works
-for pills, poker chips and playing cards in both the flat row and the carousel;
-the shadow deepens as the tab rises.
+marked. **Accent outline** (default) keeps the current accent border for pills
+and chips. **Lift** raises the selected tab, or the active tab when the strip is
+not focused, and skips the accent outline so the pick-up is the only selection
+cue. Playing cards always keep their printed ink border and never use the accent
+outline; a selected card gets a slightly heavier edge. Lift works for pills,
+poker chips and playing cards in both the flat row and the carousel; the shadow
+deepens as the tab rises.
 
 **Desktop strip background** controls the panel behind the strip: **Auto**
 (default) keeps it for the flat row and hides it for the carousel, **Always show**
@@ -226,7 +264,7 @@ instead of stopping at the edge.
 
 ## Window chips
 
-**Window tabs** can draw each open window as a square preview or as a
+**Window tab style** can draw each open window as a square preview or as a
 poker chip. The window title is curved around the top of the centre inlay, one
 character at a time, and the centre can show:
 
@@ -247,19 +285,21 @@ colors.
 
 ## Held windows
 
-Press `U` to hold the selected window. Held windows follow you to every desktop
-you switch to, and they get a colored frame and corner dot. By default they stay
-in the grid. Set **Held windows** to **Dock on the left** or **Dock on the
-right** to move them into a side panel instead; the panel uses the same squares
-or poker chips as the grid, so the two modes stay visually consistent.
+Press `U` to hold the selected window, or right-click any window card or dock
+item to toggle its held state. Held windows follow you to every desktop you
+switch to, and they get a colored frame and corner dot. By default they stay in
+the grid. Set **Held window placement** to **Dock on the left** or **Dock on
+the right** to move them into a side panel instead; the panel uses the same
+squares or poker chips as the grid, so the two modes stay visually consistent.
 
 The dock has its own keyboard stage: press `Tab` from the grid to focus it, then
 use the arrows (or `h`/`j`/`k`/`l`) to select an item, `Enter` to activate it,
 `Delete` to close it and `U` to release it back into the grid. `Tab` continues to
-the desktop strip and then back to the grid; `Esc` leaves the dock. Clicking,
-middle-clicking or hovering a dock item still works as before. Held dock items
-stay visible while a search is active, so a held window is always one click
-away. Turn **Held dock background** off to let the dock float without a panel.
+the desktop strip and then back to the grid; `Esc` leaves the dock. Clicking or
+middle-clicking a dock item still works as before, and right-clicking it
+releases the hold. Held dock items stay visible while a search is active, so a
+held window is always one click away. Turn **Held dock background** off to let
+the dock float without a panel.
 **Lift held windows** is on by default so held items look picked up; **Lift
 hovered windows** and **Lift selected window** are optional and add the same
 raised look to the pointer hover and the keyboard cursor. The lift deepens the
@@ -272,6 +312,13 @@ title or application. Focusing the field again selects the previous query, so
 typing starts a new one. The query is cleared every time the overview opens, so a
 new `Win` + `Tab` always starts from the full window list. Turn **Always show
 search** off to keep the field hidden until you press `/`.
+
+Press `Shift` + `/` (`?`) instead to search every virtual desktop. Results from
+other desktops are prefixed with their desktop number (`D2`, `D3`, ...) and show
+the application icon in place of the live thumbnail, because Windows cloaks
+windows on inactive desktops. Activating one switches to that desktop first and
+then focuses the window. Press `Esc` to leave all-desktop search and return to
+the current desktop.
 
 ## How it works
 
@@ -288,8 +335,10 @@ uses (`HKCU\...\Explorer\VirtualDesktops\Desktops\{GUID}\Name`), so renames are
 picked up by Windows and other tools.
 
 Switching desktops calls the shell's internal `IVirtualDesktopManagerInternal`
-so clicking a desktop pill or pressing a number goes straight there. Moving a
-window to another desktop uses the shell's `IApplicationViewCollection` and
+so clicking a desktop pill or pressing a number goes straight there. The current
+cards stay visible while the switch runs, and the grid is rebuilt as soon as
+Windows reports the target desktop active. Moving a window to another desktop
+uses the shell's `IApplicationViewCollection` and
 `MoveViewToDesktop`: the documented `MoveWindowToDesktop` refuses windows owned
 by other processes with `E_ACCESSDENIED`, which is always the case for the
 separate tool process. Creating or closing a desktop still presses the system

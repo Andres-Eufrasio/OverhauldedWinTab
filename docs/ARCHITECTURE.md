@@ -80,8 +80,14 @@ Window previews are real DWM thumbnails:
 - Because DWM composes thumbnails *above* the window, the preview rectangle is
   framed inside the card and window chrome (title, close button) lives in the
   card header, never over the preview.
+- Windows on inactive desktops are DWM-cloaked and cannot provide a live
+  thumbnail. All-desktop search therefore skips thumbnail registration for
+  entries whose `onCurrentDesktop` flag is false and draws the application icon
+  in the preview instead. In chip mode those cards are also left out of the
+  `g_thumbHost` region, so the mask's transparent hole reveals the overlay icon
+  instead of the host's black background.
 
-When `Appearance.WindowTabs` is `chips`, the same thumbnail is clipped to a
+When `WindowTabs.Style` is `chips`, the same thumbnail is clipped to a
 circle inside the chip. DWM thumbnails are composed above normal window content
 and are not clipped by `SetWindowRgn`, so a window region cannot round them off.
 The renderer therefore uses two extra top-level windows:
@@ -111,10 +117,10 @@ a vertical light-to-dark sheen, with an optional transparent hole for the live
 preview. The centre inlay gets its own pressed ring and a subtle printed ring,
 and the title uses a contrast-aware color from `ChipTextColor()`.
 
-`Appearance.WindowChipSize` scales `maxCardW` and the dock width, so the grid,
+`WindowTabs.ChipSize` scales `maxCardW` and the dock width, so the grid,
 the dock and the circular preview all grow together. The internal
-`WindowTabs` value remains `cards` for settings compatibility, but the UI calls
-that style **Squares**.
+`WindowTabs.Style` value remains `cards` for settings compatibility, but the
+UI calls that style **Squares**.
 
 The panel background is a translucent scrim over DWM glass
 (`DwmExtendFrameIntoClientArea` with `-1` margins). The scrim color and alpha are
@@ -175,7 +181,7 @@ palette and the backdrop effect stay independent.
 the accent (accent, lighter, darker, danger-tinted, text-tinted and a pale
 highlight). `ChipColorForIndex()` resolves the shared **Chip colors** setting for
 both desktop and window chips: `theme` cycles those derived shades, `single`
-uses `ChipColor`, `palette` cycles the comma-separated `ChipPalette`, and
+uses `Chips.Color`, `palette` cycles the comma-separated `Chips.Palette`, and
 `classic` keeps the original fixed casino set.
 
 ## 4. Window list
@@ -185,13 +191,20 @@ uses `ChipColor`, `palette` cycles the comma-separated `ChipPalette`, and
 - visible top-level windows only,
 - no shell surfaces (`Progman`, `WorkerW`, tray windows),
 - no tool windows or `WS_EX_NOACTIVATE` windows,
-- no DWM-cloaked windows (this is what hides UWP windows on other desktops),
+- no DWM-cloaked windows on the active desktop (this is what hides UWP windows),
 - no windows owned by the tool process itself,
-- only windows on the current virtual desktop,
+- only windows on the current virtual desktop in normal mode,
 - windows must have a title.
 
-The result is kept in z-order, which closely follows the most-recently-used
-order. A search string filters the list by window title or application name.
+`IVirtualDesktopManager::GetWindowDesktopId` assigns every entry a desktop id
+and index. `IsWindowOnCurrentVirtualDesktop` supplies the `onCurrentDesktop`
+flag and is also the fallback when the id is unavailable, so windows pinned to
+every desktop are still treated as visible here. Normal searches keep only the
+active desktop. All-desktop search (`?`) keeps every desktop, allows the DWM-cloaked
+windows on inactive desktops, and stable-sorts the result by desktop number
+while preserving z-order within each desktop. The result is otherwise kept in
+z-order, which closely follows the most-recently-used order. A search string
+filters the list by window title or application name.
 
 `g_filtered` is the search result, while `g_display` is the subset shown in the
 grid. With **Held windows** set to a side dock, `RebuildDisplayList()` removes
@@ -211,7 +224,8 @@ Desktop data comes from:
 - the overlay's own desktop id via the documented `IVirtualDesktopManager`,
   which is authoritative for "current" because the overlay lives on the active
   desktop, with `CurrentVirtualDesktop` as a fallback,
-- `IVirtualDesktopManager::IsWindowOnCurrentVirtualDesktop` for filtering.
+- `IVirtualDesktopManager::GetWindowDesktopId` for per-window desktop metadata,
+  with `IsWindowOnCurrentVirtualDesktop` as the fallback.
 
 Switching a desktop calls the shell's internal
 `IVirtualDesktopManagerInternal` (obtained from `CLSID_ImmersiveShell` through
@@ -222,10 +236,20 @@ between. Only
 `IVirtualDesktop::GetId` (slot 4) and `SwitchDesktop` (slot 9) are used; those
 slots sit before the per-build additions of the interface, and the interface id
 has been stable on Windows 11 since 21H2. The shell animates the switch, so the
-overlay keeps its busy state and polls its own desktop id (up to roughly 1.2 s)
-before re-enumerating. If the internal interface cannot be created, switching
+overlay keeps the current cards and thumbnails on screen and polls its own
+desktop id every 40 ms (up to roughly 2 s) before re-enumerating. The busy state
+ends as soon as the target desktop is active, so a normal switch does not flash a
+spinner or an empty grid. If the internal interface cannot be created, switching
 falls back to injected `Win` + `Ctrl` + `Left`/`Right` chords. Creating and
-closing desktops still use injected `Win` + `Ctrl` + `D` / `F4`.
+closing desktops still use injected `Win` + `Ctrl` + `D` / `F4`, and their timers
+poll the desktop count instead of waiting a fixed delay.
+
+Activating a search result that lives on another desktop stores the target in
+`g_pendingActivateWindow` and starts the same desktop switch. `kTimerDesktop`
+waits for the shell to finish switching, verifies that the target is now on the
+active desktop, then hides the overlay and activates the window. A switch that
+times out leaves the overview open and clears the pending activation instead of
+focusing a window on the wrong desktop.
 
 Held tasks (`U`) are stored in `g_held` as window handle plus colour. A 200 ms
 timer on the message-only control window reads `CurrentVirtualDesktop`; when it
@@ -268,11 +292,12 @@ State is intentionally small:
   the desktop strip.
 - `UpdateLayout` computes both the scene geometry and the per-card / per-pill hit
   rectangles in physical pixels, so mouse hit testing and rendering always agree.
-- `Appearance.DesktopSelection` is resolved in `RebuildPills()`: `lift` raises
+- `DesktopStrip.Selection` is resolved in `RebuildPills()`: `lift` raises
   the selected tab (or the active tab when the strip is not focused) by 6-10 px,
   shifts its hit and close rectangles with it, and suppresses the accent outline
-  in all three desktop renderers.
-- `Appearance.LiftHeldWindows`, `LiftHoveredWindows` and `LiftSelectedWindow`
+  for pills and chips. Playing cards always keep their printed ink border; a
+  selected card gets a slightly heavier edge instead.
+- `HeldWindows.LiftHeld`, `WindowTabs.LiftHovered` and `WindowTabs.LiftSelected`
   add the same lift to window cards and chips. Held dock items use the held lift
   when it is enabled, and the hover lift when that option is enabled.
 - `g_renameDesktop` / `g_renameText` hold the inline desktop rename editor. The
@@ -283,21 +308,31 @@ State is intentionally small:
   is where it is heading and `WrapDelta` measures the shortest way around the
   wheel.
 
-The search field is never typed into until it has focus: click it, or press `/`.
-Until then `WM_CHAR` only routes the navigation keys (`h` `j` `k` `l` `x`), so a
-query that contains those letters can never collide with a command. While the
-field is focused, `OnKeyDown` handles only `Esc`, `Enter`, `Backspace` and
-selection dismissal so that keys such as `Delete` or `N` cannot trigger an action
+The search field is never typed into until it has focus: click it, press `/` for
+the current desktop, or press `?` (`Shift` + `/`) for all desktops. Until then
+`WM_CHAR` only routes the navigation keys (`h` `j` `k` `l` `x`), so a query that
+contains those letters can never collide with a command. While the field is
+focused, `OnKeyDown` handles only `Esc`, `Enter`, `Backspace` and selection
+dismissal so that keys such as `Delete` or `N` cannot trigger an action
 mid-query. Focusing a field that already holds a query sets `g_searchSelectAll`,
 which makes the next typed character replace the query. With
 `Appearance.AlwaysShowSearch` off, `SearchVisible()` collapses the field in
-`UpdateLayout` until it is focused or non-empty; `Appearance.ShowHints` hides only
-the hint line.
+`UpdateLayout` until it is focused, non-empty, or in all-desktop search;
+`Appearance.ShowHints` hides only the hint line.
 
-`Appearance.DesktopStrip` selects the strip layout: `flat` or `carousel`.
-`Appearance.StripTabs` selects the tab shape: `pill`, `chip` or `cards`. The old
-`DesktopStrip=cards` value was removed; `StripTabs` is the single source of
-truth for the tab shape. `UsesChips()` and `UsesCards()` resolve the tab style, and
+`?` sets `g_searchAllDesktops` and re-enumerates the window list before focusing
+the field. Pressing `/` while the field is not focused switches back to
+current-desktop mode and re-enumerates the active desktop. `ExitSearch()` clears
+the query and the mode together on `Esc`; the clear button and `Backspace` only
+clear the query, so the all-desktop mode survives until `Esc` or an unfocused
+`/` leaves it. All-desktop results prefix the title with `D#`, show the app icon
+when no thumbnail is available, and activate through the pending desktop switch
+described above.
+
+`DesktopStrip.Layout` selects the strip layout: `flat` or `carousel`.
+`DesktopStrip.Tabs` selects the tab shape: `pill`, `chip` or `cards`. The old
+`DesktopStrip=cards` value was removed; `DesktopStrip.Tabs` is the single source
+of truth for the tab shape. `UsesChips()` and `UsesCards()` resolve the tab style, and
 `IsWheel()` marks the carousel layout. In carousel mode every tab is placed by
 its wrapped distance `d` from `g_carouselPos`, with `scale = 1 - 0.18|d|`, a
 `4.5d` degree tilt, a small vertical arc and an alpha fade. `DrawChipTab` paints
@@ -309,7 +344,7 @@ and 64 px in the carousel, with the name on a label underneath (15 px and 17 px
 respectively).
 
 Playing cards are a tab style, so they work in both layouts. `RebuildPills`
-uses a fixed 160 x 224 card multiplied by `Appearance.CardSize`
+uses a fixed 160 x 224 card multiplied by `Cards.Size`
 (small 0.82, medium 1.0, large 1.22) and the strip is `224 * scale + 40` px tall
 (264 px at medium) so the rotated cards stay inside it. The carousel positions
 cards on the wheel; the flat row shrinks them if the row cannot fit. The create
@@ -321,7 +356,7 @@ was removed so the back reads as a card rather than an add button.
 create action as a click. `DrawDesktopCard` paints the ivory face,
 corner rank and suit (rotated 180 degrees in the bottom corner), a large suit
 pip, and the desktop name; the suit is `desktop & 3`, so desktops cycle through
-spades, hearts, diamonds and clubs. `Appearance.CardAnimations` adds two ghost
+spades, hearts, diamonds and clubs. `Cards.Animations` adds two ghost
 cards drawn by `DrawCardAnimation()`: creating a desktop pulls a card from the
 create deck to the slot where the new tab will appear and only then sends
 Win+Ctrl+D, while closing one tosses the card up and off the right edge. The
@@ -331,7 +366,7 @@ represents. The draw target is computed before creation from the current layout
 real tab needs to be hidden. A throw hides the closing tab until the ghost
 leaves. Both animations use `AnimationSeconds()`, so
 `Appearance.AnimationSpeed` controls them.
-`Appearance.StripBackground` controls the panel: `Auto` keeps it in the flat row
+`DesktopStrip.Background` controls the panel: `Auto` keeps it in the flat row
 and hides it for the carousel, `StripBackgroundVisible()` resolves the three
 modes, and floating tabs get a soft drop shadow. `kTimerCarousel` eases
 `g_carouselPos` towards `StripTarget()`
@@ -341,8 +376,10 @@ changes. Rendering sorts visible tabs farthest-first and applies a
 scale/rotation transform about each tab centre; hit testing uses the transformed
 bounding box and prefers the tab closest to the centre.
 
-`Appearance.WindowTabs` selects `DrawWindowCard()` or `DrawWindowChip()` for
-grid and dock items. `Appearance.WindowChipContent` selects the live DWM
+`WindowTabs.Style` selects `DrawWindowCard()` or `DrawWindowChip()` for
+grid and dock items. `DrawWindowCard()` uses the selected fill and a neutral
+edge rather than the accent outline; pills and chips keep their accent selection
+rings. `WindowTabs.ChipContent` selects the live DWM
 thumbnail, a large app icon or a name-only center. The circular thumbnail path
 uses `g_thumbHost` / `g_chipMask`; thumbnails are skipped when the chip content is
 icon or blank, because the center does not show a preview. `DrawWindowChip()`
@@ -355,12 +392,14 @@ band between the centre inlay and the edge inserts and trims it with an ellipsis
 when it exceeds the 170-degree arc. Hover and close rectangles
 are tracked separately for the grid (`g_hoverCard` / `g_hoverClose`) and the dock
 (`g_hoverDock` / `g_hoverDockClose`), and `OnLeftClick()` uses the stable
-`CardView::entry` for dock activation and closing.
+`CardView::entry` for dock activation and closing. `WM_RBUTTONUP` toggles
+`ToggleHoldWindow()` for the card or dock item under the pointer; desktop pills
+still begin an inline rename.
 
-`Appearance.HeldDockBackground` toggles only the dock panel fill and stroke; the
+`HeldWindows.DockBackground` toggles only the dock panel fill and stroke; the
 dock label and items stay visible either way.
 
-`Behavior.WrapDesktopStrip` controls `MoveStripSelection()`, the shared handler
+`DesktopStrip.Wrap` controls `MoveStripSelection()`, the shared handler
 for `Left`/`Right` and `h`/`l` while the strip has focus. With it on, the
 selection wraps modulo the desktop count (7 to 1 and back); with it off it clamps
 at the ends. The title in the top-left is `Appearance.Title`, defaulting to
