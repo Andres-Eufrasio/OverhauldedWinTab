@@ -2,13 +2,13 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.8.4
+// @version         0.8.5
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
 // @include         windhawk.exe
 // @include         explorer.exe
-// @compilerOptions -lshell32 -lole32 -lgdi32 -luser32 -ladvapi32 -lshcore -lversion -ldwmapi -ld2d1 -ldwrite
+// @compilerOptions -lshell32 -lole32 -lgdi32 -luser32 -ladvapi32 -lshcore -lversion -ldwmapi -ld2d1 -ldwrite -lwindowscodecs
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -68,6 +68,12 @@ The mod's **Settings** tab covers the layout and colors:
   bottom of the screen; turn it off for full cards. Card size, create/close
   animations, the strip background and highlight or lift selection are
   configurable.
+- **Card artwork:** Set an absolute PNG/JPG path for the card face or the
+  face-down create card. Optional card themes provide matching chip palettes:
+  Yu-Gi-Oh!, Pokémon and Kakegurui. Artwork is not bundled; use files you have
+  permission to use. Card artwork works best at a portrait 2:3 ratio, such as
+  800×1200. Suit symbols can be hidden and the card name can be positioned with
+  X/Y offsets from the top-right corner.
 - **Held windows:** Press `U` or right-click a window to keep it with you as you
   change desktops. Leave held windows in the grid or put them in a dock on either
   side. The dock can have a panel or float on its own.
@@ -246,6 +252,29 @@ MIT. See [LICENSE](LICENSE).
     - Tucked: false
       $name: Tuck playing cards
       $description: Show the upper half of playing-card desktop tabs at the bottom of the screen, like cards held in your hand.
+    - DesignPath: ""
+      $name: Card design image path
+      $description: Optional absolute path to a PNG or JPG used as the playing-card face. Recommended aspect ratio is 2:3 (for example 800x1200).
+    - BackDesignPath: ""
+      $name: Card back image path
+      $description: Optional absolute path to a PNG or JPG used on the face-down create card. Recommended aspect ratio is 2:3.
+    - HideSuitsWithDesign: false
+      $name: Hide suit symbols with card design
+      $description: Hide the default suit symbols when a card design image is loaded.
+    - TextX: ""
+      $name: Card text X offset
+      $description: Optional offset from the card's top-right corner in pixels. Entering X or Y replaces the default centered text position.
+    - TextY: ""
+      $name: Card text Y offset
+      $description: Optional downward offset from the card's top edge in pixels.
+    - Theme: "default"
+      $name: Card theme
+      $description: Optional matching chip palette for custom card artwork. The artwork itself is supplied with Card design image path.
+      $options:
+      - "default": Default
+      - "yugioh": Yu-Gi-Oh!
+      - "pokemon": Pokémon
+      - "kakegurui": Kakegurui
     - Animations: true
       $name: Card animations
       $description: Animate playing cards being drawn from the deck and thrown away when a desktop is created or closed.
@@ -284,6 +313,7 @@ MIT. See [LICENSE](LICENSE).
 #include <d2d1helper.h>
 #include <dwrite.h>
 #include <dwmapi.h>
+#include <wincodec.h>
 #include <shellapi.h>
 #include <shobjidl.h>
 #include <tlhelp32.h>
@@ -293,6 +323,7 @@ MIT. See [LICENSE](LICENSE).
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <cwchar>
 #include <string>
 #include <vector>
 
@@ -647,6 +678,17 @@ static ID2D1Factory* g_d2dFactory = nullptr;
 static ID2D1DCRenderTarget* g_d2dTarget = nullptr;
 static ID2D1SolidColorBrush* g_d2dBrush = nullptr;
 static ID2D1Layer* g_d2dLayer = nullptr;
+static ID2D1Bitmap* g_cardDesignBitmap = nullptr;
+static std::wstring g_loadedCardDesignPath;
+static std::wstring g_cardDesignPath;
+static ID2D1Bitmap* g_cardBackBitmap = nullptr;
+static std::wstring g_loadedCardBackPath;
+static std::wstring g_cardBackPath;
+static bool g_hideCardSuitsWithDesign = false;
+static bool g_cardTextPositionCustom = false;
+static int g_cardTextX = 0;
+static int g_cardTextY = 0;
+static std::wstring g_cardTheme = L"default";
 static IDWriteFactory* g_dwrite = nullptr;
 static IDWriteTextFormat* g_fmtTitle = nullptr;
 static IDWriteTextFormat* g_fmtCard = nullptr;
@@ -950,6 +992,22 @@ static void ResolveTheme()
     g_themeChipColors.push_back(MixColor(g_theme.accent, 0xFFFFFFFF, 0.56f));
 }
 
+static void ReleaseCardDesignBitmap()
+{
+    if (g_cardDesignBitmap)
+    {
+        g_cardDesignBitmap->Release();
+        g_cardDesignBitmap = nullptr;
+    }
+    g_loadedCardDesignPath.clear();
+    if (g_cardBackBitmap)
+    {
+        g_cardBackBitmap->Release();
+        g_cardBackBitmap = nullptr;
+    }
+    g_loadedCardBackPath.clear();
+}
+
 static void LoadSettings()
 {
     auto read = [](PCWSTR key) {
@@ -1079,6 +1137,42 @@ static void LoadSettings()
                 : cardSize == L"large" ? 1.22f
                                        : 1.0f;
     g_tuckCards = Wh_GetIntSetting(L"Cards.Tucked") != 0;
+    const std::wstring designPath = read(L"Cards.DesignPath");
+    if (designPath != g_cardDesignPath)
+    {
+        g_cardDesignPath = designPath;
+        ReleaseCardDesignBitmap();
+    }
+    const std::wstring backDesignPath = read(L"Cards.BackDesignPath");
+    if (backDesignPath != g_cardBackPath)
+    {
+        g_cardBackPath = backDesignPath;
+        ReleaseCardDesignBitmap();
+    }
+    g_hideCardSuitsWithDesign =
+        Wh_GetIntSetting(L"Cards.HideSuitsWithDesign") != 0;
+
+    auto parseOffset = [](const std::wstring& value, int& result) {
+        if (value.empty())
+            return false;
+        WCHAR* end = nullptr;
+        const long parsed = std::wcstol(value.c_str(), &end, 10);
+        if (end == value.c_str() || *end != L'\0')
+            return false;
+        result = static_cast<int>(std::max(-2000L, std::min(2000L, parsed)));
+        return true;
+    };
+    int textX = 0;
+    int textY = 0;
+    const bool hasTextX = parseOffset(read(L"Cards.TextX"), textX);
+    const bool hasTextY = parseOffset(read(L"Cards.TextY"), textY);
+    g_cardTextPositionCustom = hasTextX || hasTextY;
+    g_cardTextX = hasTextX ? textX : 0;
+    g_cardTextY = hasTextY ? textY : 0;
+    g_cardTheme = read(L"Cards.Theme");
+    if (g_cardTheme != L"yugioh" && g_cardTheme != L"pokemon" &&
+        g_cardTheme != L"kakegurui")
+        g_cardTheme = L"default";
 
     const std::wstring title = read(L"Appearance.Title");
     g_titleText = title.empty() ? L"Task View" : title;
@@ -1137,6 +1231,7 @@ static void ReleaseIcons()
 static void ReleaseDeviceResources()
 {
     ReleaseIcons();
+    ReleaseCardDesignBitmap();
     if (g_d2dLayer) { g_d2dLayer->Release(); g_d2dLayer = nullptr; }
     if (g_d2dBrush) { g_d2dBrush->Release(); g_d2dBrush = nullptr; }
     if (g_d2dTarget) { g_d2dTarget->Release(); g_d2dTarget = nullptr; }
@@ -1224,6 +1319,98 @@ static bool EnsureDeviceResources()
         g_d2dLayer = nullptr;
 
     return g_d2dBrush != nullptr;
+}
+
+static ID2D1Bitmap* EnsureBitmapFromPath(const std::wstring& path,
+                                         ID2D1Bitmap*& bitmap,
+                                         std::wstring& loadedPath)
+{
+    if (!g_d2dTarget || path.empty())
+        return nullptr;
+    if (bitmap && loadedPath == path)
+        return bitmap;
+
+    if (bitmap)
+    {
+        bitmap->Release();
+        bitmap = nullptr;
+    }
+    loadedPath = path;
+
+    IWICImagingFactory* factory = nullptr;
+    IWICBitmapDecoder* decoder = nullptr;
+    IWICBitmapFrameDecode* frame = nullptr;
+    IWICFormatConverter* converter = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) ||
+        FAILED(factory->CreateDecoderFromFilename(
+            path.c_str(), nullptr, GENERIC_READ,
+            WICDecodeMetadataCacheOnLoad, &decoder)) ||
+        FAILED(decoder->GetFrame(0, &frame)) ||
+        FAILED(factory->CreateFormatConverter(&converter)) ||
+        FAILED(converter->Initialize(
+            frame, GUID_WICPixelFormat32bppPBGRA,
+            WICBitmapDitherTypeNone, nullptr, 0.0f,
+            WICBitmapPaletteTypeMedianCut)) ||
+        FAILED(g_d2dTarget->CreateBitmapFromWicBitmap(
+            converter, nullptr, &bitmap)))
+    {
+        if (converter) converter->Release();
+        if (frame) frame->Release();
+        if (decoder) decoder->Release();
+        if (factory) factory->Release();
+        bitmap = nullptr;
+        return nullptr;
+    }
+
+    converter->Release();
+    frame->Release();
+    decoder->Release();
+    factory->Release();
+    return bitmap;
+}
+
+static ID2D1Bitmap* EnsureCardDesignBitmap()
+{
+    return EnsureBitmapFromPath(g_cardDesignPath, g_cardDesignBitmap,
+                                g_loadedCardDesignPath);
+}
+
+static ID2D1Bitmap* EnsureCardBackBitmap()
+{
+    return EnsureBitmapFromPath(g_cardBackPath, g_cardBackBitmap,
+                                g_loadedCardBackPath);
+}
+
+static void DrawBitmapCover(ID2D1Bitmap* bitmap, const RectF& bounds, float alpha)
+{
+    if (!bitmap)
+        return;
+
+    const D2D1_SIZE_F source = bitmap->GetSize();
+    const RectF image = bounds;
+    const float scale = std::max(image.W() / source.width,
+                                 image.H() / source.height);
+    const float drawW = source.width * scale;
+    const float drawH = source.height * scale;
+    const float cx = (image.l + image.r) / 2.0f;
+    const float cy = (image.t + image.b) / 2.0f;
+    const D2D1_RECT_F destination = D2D1::RectF(
+        cx - drawW / 2.0f, cy - drawH / 2.0f,
+        cx + drawW / 2.0f, cy + drawH / 2.0f);
+    g_d2dTarget->PushAxisAlignedClip(
+        D2D1::RectF(image.l, image.t, image.r, image.b),
+        D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    g_d2dTarget->DrawBitmap(bitmap, &destination, alpha,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+    g_d2dTarget->PopAxisAlignedClip();
+}
+
+static void DrawCardDesign(const RectF& face, float alpha)
+{
+    const RectF image = {face.l + 2.0f * g_scale, face.t + 2.0f * g_scale,
+                         face.r - 2.0f * g_scale, face.b - 2.0f * g_scale};
+    DrawBitmapCover(EnsureCardDesignBitmap(), image, alpha);
 }
 
 static void EnsureTextFormats()
@@ -2400,6 +2587,33 @@ static UINT32 ChipColorForIndex(int index)
         return ClassicChipColor(index);
     case ChipColorMode::Theme:
     default:
+        if (g_cardTheme != L"default")
+        {
+            static const UINT32 yugioh[] = {0xFF171A3A, 0xFFB08D2C,
+                                             0xFF6B1E2B, 0xFF2E4E8A};
+            static const UINT32 pokemon[] = {0xFFD62828, 0xFF2D6CDF,
+                                              0xFFF0B429, 0xFF3A8D5D};
+            static const UINT32 kakegurui[] = {0xFF171717, 0xFF8E1B2A,
+                                                0xFFD4AF37, 0xFF5A0F1B};
+            const UINT32* colors = nullptr;
+            size_t count = 0;
+            if (g_cardTheme == L"yugioh")
+            {
+                colors = yugioh;
+                count = ARRAYSIZE(yugioh);
+            }
+            else if (g_cardTheme == L"pokemon")
+            {
+                colors = pokemon;
+                count = ARRAYSIZE(pokemon);
+            }
+            else
+            {
+                colors = kakegurui;
+                count = ARRAYSIZE(kakegurui);
+            }
+            return colors[static_cast<size_t>(index) % count];
+        }
         return g_themeChipColors.empty()
                    ? g_theme.accent
                    : g_themeChipColors[static_cast<size_t>(index) %
@@ -3750,6 +3964,34 @@ static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
     const float radius = 12.0f * s;
     const float emphasis = DesktopHighlightStrength(selected, active);
 
+    D2D1::Matrix3x2F savedTransform;
+    bool movingForCreate = false;
+    if (g_createAfterDraw && g_cardAnim.mode == CardAnimationMode::Draw)
+    {
+        const int movedDesktop =
+            g_focusStrip ? g_desktopSelected : g_currentDesktop;
+        movingForCreate = pill.desktop == movedDesktop;
+        if (movingForCreate)
+        {
+            const float duration = std::max(0.05f, g_cardAnim.duration);
+            const float elapsed = static_cast<float>(GetTickCount64() -
+                                                      g_cardAnim.start) /
+                                  1000.0f;
+            const float progress = std::max(0.0f,
+                                            std::min(1.0f, elapsed / duration));
+            const float angle = -7.0f * EaseOutCubic(progress);
+            // The new card is drawn into the insertion slot. Existing cards
+            // make room on the opposite side, so use the corner facing that
+            // movement as the hinge.
+            const bool movesRight = g_cardAnim.to.l < g_cardAnim.from.l;
+            const float pivotX = movesRight ? face.r : face.l;
+            g_d2dTarget->GetTransform(&savedTransform);
+            g_d2dTarget->SetTransform(
+                D2D1::Matrix3x2F::Rotation(
+                    angle, D2D1::Point2F(pivotX, face.b)) * savedTransform);
+        }
+    }
+
     const UINT32 faceColor = 0xFFF8F5EC;
     const UINT32 ink = 0xFF1C1B20;
     const UINT32 red = 0xFFC62828;
@@ -3772,6 +4014,14 @@ static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
         hovered ? MixColor(faceColor, 0xFFE4DCC8, 0.55f) : faceColor;
     FillRound(face, radius, MixColor(paper, g_theme.accent, 0.12f * emphasis),
               alpha);
+    ID2D1Bitmap* customDesign = EnsureCardDesignBitmap();
+    if (customDesign)
+    {
+        const RectF image = {face.l + 2.0f * s, face.t + 2.0f * s,
+                             face.r - 2.0f * s, face.b - 2.0f * s};
+        DrawBitmapCover(customDesign, image, alpha);
+    }
+    const bool hideSuits = customDesign && g_hideCardSuitsWithDesign;
     // Playing cards keep their printed ink border; selection never repaints it
     // with the accent color. A selected card gets a slightly heavier edge.
     const bool marked = selected || active;
@@ -3801,8 +4051,9 @@ static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
     IDWriteTextFormat* suitFmt = g_fmtCardSuit ? g_fmtCardSuit : g_fmtPillLarge;
     DrawTextBlock(rank, g_fmtPillLarge, rankRect, suitColor,
                   DWRITE_TEXT_ALIGNMENT_CENTER, alpha);
-    DrawTextBlock(glyph, suitFmt, suitRect, suitColor,
-                  DWRITE_TEXT_ALIGNMENT_CENTER, alpha);
+    if (!hideSuits)
+        DrawTextBlock(glyph, suitFmt, suitRect, suitColor,
+                      DWRITE_TEXT_ALIGNMENT_CENTER, alpha);
 
     const RectF bRankRect = {face.r - pad - idxW, face.b - 27.0f * s,
                              face.r - pad, face.b - 5.0f * s};
@@ -3810,22 +4061,37 @@ static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
                              face.r - pad, face.b - 24.0f * s};
     DrawRotatedTextBlock(rank, g_fmtPillLarge, bRankRect, suitColor,
                          DWRITE_TEXT_ALIGNMENT_CENTER, alpha, 180.0f);
-    DrawRotatedTextBlock(glyph, suitFmt, bSuitRect, suitColor,
-                         DWRITE_TEXT_ALIGNMENT_CENTER, alpha, 180.0f);
+    if (!hideSuits)
+        DrawRotatedTextBlock(glyph, suitFmt, bSuitRect, suitColor,
+                             DWRITE_TEXT_ALIGNMENT_CENTER, alpha, 180.0f);
 
     const float h = face.H();
     const RectF bigSuit = {face.l + 18.0f * s, face.t + h * 0.27f,
                            face.r - 18.0f * s, face.t + h * 0.63f};
-    DrawTextBlock(glyph, g_fmtCardSuitBig ? g_fmtCardSuitBig : suitFmt, bigSuit,
-                  suitColor, DWRITE_TEXT_ALIGNMENT_CENTER, 0.14f * alpha);
+    if (!hideSuits)
+        DrawTextBlock(glyph, g_fmtCardSuitBig ? g_fmtCardSuitBig : suitFmt,
+                      bigSuit, suitColor, DWRITE_TEXT_ALIGNMENT_CENTER,
+                      0.14f * alpha);
 
     const bool renaming = g_renameDesktop == pill.desktop;
     const std::wstring& name =
         renaming ? g_renameText : g_desktops[pill.desktop].name;
-    const float nameTop = g_tuckCards ? 0.32f : 0.64f;
-    const float nameBottom = g_tuckCards ? 0.47f : 0.80f;
-    const RectF nameRect = {face.l + 8.0f * s, face.t + h * nameTop,
-                            face.r - 8.0f * s, face.t + h * nameBottom};
+    RectF nameRect;
+    if (g_cardTextPositionCustom)
+    {
+        const float textW = face.W() * 0.62f;
+        const float textRight = face.r - static_cast<float>(g_cardTextX) * s;
+        const float textTop = face.t + static_cast<float>(g_cardTextY) * s;
+        nameRect = {textRight - textW, textTop, textRight,
+                    textTop + 22.0f * s};
+    }
+    else
+    {
+        const float nameTop = g_tuckCards ? 0.32f : 0.64f;
+        const float nameBottom = g_tuckCards ? 0.47f : 0.80f;
+        nameRect = {face.l + 8.0f * s, face.t + h * nameTop,
+                    face.r - 8.0f * s, face.t + h * nameBottom};
+    }
     DrawTextBlock(name, g_fmtHint, nameRect, ink,
                   DWRITE_TEXT_ALIGNMENT_CENTER, 0.78f * alpha);
 
@@ -3855,6 +4121,9 @@ static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
                               D2D1::Point2F(ccx - arm, ccy + arm), g_d2dBrush,
                               1.4f * s);
     }
+
+    if (movingForCreate)
+        g_d2dTarget->SetTransform(savedTransform);
 }
 
 // A face-down playing card used as the create-desktop button. Clicking it or
@@ -3875,6 +4144,13 @@ static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
         MixColor(g_theme.pillFill, g_theme.accent, hovered ? 0.30f : 0.20f);
     const UINT32 panel = MixColor(back, 0xFF000000, 0.18f);
     FillRound(card, radius, back, 1.0f);
+    ID2D1Bitmap* customBack = EnsureCardBackBitmap();
+    if (customBack)
+    {
+        const RectF image = {card.l + 2.0f * s, card.t + 2.0f * s,
+                             card.r - 2.0f * s, card.b - 2.0f * s};
+        DrawBitmapCover(customBack, image, 1.0f);
+    }
 
     // Double border, like the frame printed on a real card back.
     StrokeRound(card, radius, gold, 2.2f * s, 0.90f);
@@ -3882,6 +4158,9 @@ static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
                           card.r - 7.0f * s, card.b - 7.0f * s};
     StrokeRound(border, std::max(3.0f * s, radius - 4.0f * s), gold,
                 1.0f * s, 0.45f);
+
+    if (customBack)
+        return;
 
     const RectF inner = {card.l + 13.0f * s, card.t + 13.0f * s,
                          card.r - 13.0f * s, card.b - 13.0f * s};

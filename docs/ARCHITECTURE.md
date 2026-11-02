@@ -381,6 +381,13 @@ represents. The draw target is computed before creation from the current layout
 real tab needs to be hidden. A throw hides the closing tab until the ghost
 leaves. Both animations use `AnimationSeconds()`, so
 `Appearance.AnimationSpeed` controls them.
+
+`Cards.DesignPath` and `Cards.BackDesignPath` load user-supplied PNG/JPG artwork
+through WIC and draw it cropped to the card face. A portrait 2:3 source, such as
+800x1200, is recommended. `Cards.HideSuitsWithDesign` removes the built-in suit
+symbols, while `Cards.TextX` and `Cards.TextY` replace the default name position
+with a rectangle anchored from the card's top-right corner. `Cards.Theme` only
+selects a matching chip palette; it does not bundle copyrighted artwork.
 `DesktopStrip.Background` controls the panel: `Auto` keeps it in the flat row
 unless cards are tucked, and hides it for the carousel.
 `StripBackgroundVisible()` resolves the three modes, and floating tabs get a

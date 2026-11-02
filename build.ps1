@@ -43,7 +43,7 @@ $arguments = @(
     '-o', $output,
     $source,
     '-lshell32', '-lole32', '-lgdi32', '-luser32', '-ladvapi32',
-    '-lshcore', '-lversion', '-ldwmapi', '-ld2d1', '-ldwrite'
+    '-lshcore', '-lversion', '-ldwmapi', '-ld2d1', '-ldwrite', '-lwindowscodecs'
 )
 
 & $clang @arguments

@@ -53,6 +53,12 @@ The mod's **Settings** tab covers the layout and colors:
   bottom of the screen; turn it off for full cards. Card size, create/close
   animations, the strip background and highlight or lift selection are
   configurable.
+- **Card artwork:** Set an absolute PNG/JPG path for the card face or the
+  face-down create card. Optional card themes provide matching chip palettes:
+  Yu-Gi-Oh!, Pokémon and Kakegurui. Artwork is not bundled; use files you have
+  permission to use. Card artwork works best at a portrait 2:3 ratio, such as
+  800×1200. Suit symbols can be hidden and the card name can be positioned with
+  X/Y offsets from the top-right corner.
 - **Held windows:** Press `U` or right-click a window to keep it with you as you
   change desktops. Leave held windows in the grid or put them in a dock on either
   side. The dock can have a panel or float on its own.
