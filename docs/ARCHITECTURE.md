@@ -342,9 +342,9 @@ The search field is never typed into until it has focus: click it, press `/` for
 the current desktop, or press `?` (`Shift` + `/`) for all desktops. Until then
 `WM_CHAR` only routes the navigation keys (`h` `j` `k` `l` `x`), so a query that
 contains those letters can never collide with a command. While the field is
-focused, `OnKeyDown` handles only `Esc`, `Enter`, `Backspace` and selection
-dismissal so that keys such as `Delete` or `N` cannot trigger an action
-mid-query. Focusing a field that already holds a query sets `g_searchSelectAll`,
+focused, `OnKeyDown` handles only `Esc` (leave the search), `Enter`,
+`Backspace` and selection dismissal so that keys such as `Delete` or `N` cannot
+trigger an action mid-query. Focusing a field that already holds a query sets `g_searchSelectAll`,
 which makes the next typed character replace the query. With
 `Appearance.AlwaysShowSearch` off, `SearchVisible()` collapses the field in
 `UpdateLayout` until it is focused, non-empty, or in all-desktop search;
@@ -355,7 +355,7 @@ the field. Pressing `/` while the field is not focused switches back to
 current-desktop mode and re-enumerates the active desktop. `ExitSearch()` clears
 the query and the mode together on `Esc`; the clear button and `Backspace` only
 clear the query, so the all-desktop mode survives until `Esc` or an unfocused
-`/` leaves it. All-desktop results prefix the title with `D#`, show the app icon
+`/` leaves it. A second `Esc` from the normal view closes the overview. All-desktop results prefix the title with `D#`, show the app icon
 when no thumbnail is available, and activate through the pending desktop switch
 described above.
 
@@ -472,9 +472,57 @@ grid -> dock -> strip -> grid, skipping the dock when `g_dockCards` is empty.
 returns the dock item while that cursor is active, so `U`, `M`, `Shift`+arrows
 and the close action operate on the dock without changing the grid selection.
 `MoveDockSelection()` wraps or clamps according to `Behavior.WrapNavigation`.
-`Enter` activates, `Delete` closes, `U` releases, and `Esc` leaves the dock. With
-the dock enabled, held windows are removed from `g_display`, so they are not part
-of the grid page; the dock cursor is the keyboard route to them.
+`Enter` activates, `Delete` closes and `U` releases. `Esc` leaves the dock (or
+the search) first; a second press closes the overview. With the dock enabled,
+held windows are removed from `g_display`, so they are not part of the grid
+page; the dock cursor is the keyboard route to them.
+
+Hover and keyboard navigation share the selection. Hovering a card sets
+`g_selected` to that card as the navigation anchor but sets
+`g_pointerWindowSelection`, which suppresses the keyboard highlight while the
+pointer is there. `MoveSelection()`, `MoveDockSelection()` and
+`MoveStripSelection()` call `TakeKeyboardPointerOwnership()`: it clears every
+hover state, restores the keyboard highlight and records the current cursor
+position. `UpdateHover()` ignores mouse messages at that same position, so the
+arrow/Vim selection cannot be stolen back by a synthetic or repeated
+`WM_MOUSEMOVE`; the first real pointer-coordinate change returns control to the
+mouse.
+
+Escape and Enter are registered with `RegisterHotKey()` on the overlay while it
+is visible. The shell can briefly take the foreground during a desktop switch,
+and focus-loss closing is suppressed while `g_busy`; the hotkeys guarantee those
+keys still reach the overlay in that state. `ReclaimOverlayForeground()` also
+takes the keyboard back when a desktop action completes or the idle timer
+notices the overlay is visible but no longer foreground.
+
+Enter uses `g_returnKeyLatch` so one physical press produces one action.
+Windows auto-repeats a held Enter, and after a hide that repeat would otherwise
+reach the window that just regained focus and open it. While the key is held the
+Return hotkey stays registered after `FinishHide()`, the hidden overlay swallows
+the repeats, and a 15 ms `kTimerReturnRelease` poll unregisters the hotkey once
+the key is actually up. `OnKeyDown()` ignores a second Enter while the latch is
+set, and `WM_HOTKEY` only acts while the overlay is visible.
+
+`ActivateDesktopSelection()` is the only Enter path for desktop tabs. It clears
+`g_pendingMove` and any queued window activation before switching, and a
+desktop tab under the pointer is accepted even when the grid still owns
+keyboard focus. The pointer is re-tested with `PillAt()` at Enter time because
+opening the overview with the cursor already parked on a tab produces no
+`WM_MOUSEMOVE` to refresh `g_hoverPill`, and a desktop switch can leave that
+cached index pointing at the previous layout. Arrow/vim ownership suppresses
+the lookup until the pointer moves. Without this, Enter on a desktop could fall
+through to `ActivateEntry()` and open the selected window instead.
+
+`RestoreOriginWindow()` is the only path that returns focus to the window that
+was active before the overview opened. `ShowOverlay()` records the active
+desktop in `g_originDesktopId`; if the user closes the overview while a
+different desktop is active, the restore is skipped. It also skips when the
+origin window is no longer on the active desktop, and `g_desktopEnterHide`
+skips it entirely when Enter chose an already-active desktop. Without these
+guards a desktop Enter could foreground a window from another desktop (even a
+held task that was carried along), which looks like the window opened and its
+desktop moved. Clicking a window, dock item or empty space also clears
+`g_focusStrip`, so a stale tab focus cannot hijack Enter after a click.
 
 Activating a window hides the overlay immediately (no reverse animation) and
 then restores and foregrounds the target. Closing a window posts `WM_CLOSE`,

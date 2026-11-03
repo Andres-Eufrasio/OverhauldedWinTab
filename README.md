@@ -1,110 +1,57 @@
 # OverhauldedWinTab
 
-OverhauldedWinTab replaces Windows 11 Task View (`Win+Tab`) with a window grid
-and a virtual desktop strip. Switch to a window from its live preview, search
-by title or app, or jump to another desktop without closing the overview.
+OverhauldedWinTab replaces Windows 11 Task View (`Win+Tab`) with a window
+overview and a virtual desktop strip. Open windows from live previews, and
+search or move windows and desktops without closing the overview.
+
+![Saiki K and Yu-Gi-Oh! card artwork](docs/theme-previews.png)
 
 ## Controls
 
-| Key or action | What it does |
+| Action | Keys |
 | --- | --- |
-| `Win+Tab` | Open or close the overview |
-| Arrow keys | Move through windows, the held dock or desktops |
-| `Tab` | Cycle between the window grid, held dock (if enabled) and desktop strip |
-| `Enter` | Open the selected window or switch to the selected desktop |
-| `Esc` | Leave the dock or search; press again to close the overview |
-| `/` | Search windows on the current desktop |
-| `Shift+/` (`?`) | Search windows on every desktop |
-| `1`–`9` | Switch to a numbered desktop |
-| `Shift+1`–`Shift+9`, or `M` then `1`–`9` | Move the selected window to that desktop |
-| `Ctrl+Left` / `Ctrl+Right` | Switch to the previous or next desktop |
-| `Shift+Left` / `Shift+Right` | Move the selected window to an adjacent desktop |
-| `U`, or right-click a window | Hold or release a window |
-| `Delete`, or middle-click a window | Close a window; `Delete` closes the active desktop when the strip is focused |
-| `F2`, or right-click a desktop tab | Rename a desktop |
-| `N` (strip focused), or click the create tab | Create a desktop |
+| Open or close the overview | `Win+Tab` |
+| Navigate | Arrow keys, or `h` `j` `k` `l` with Vim navigation |
+| Cycle grid, held dock and desktop strip | `Tab` |
+| Open the selected window or switch desktop | `Enter` |
+| Search the current / all desktops | `/` / `?` |
+| Switch desktop | `1`–`9`, `Ctrl+Left` / `Ctrl+Right` |
+| Move the selected window | `Shift+1`–`Shift+9`, `Shift+Left` / `Shift+Right`, or `M` then a number |
+| Hold or release a window | `U`, or right-click a window |
+| Close a window or desktop | `Delete`, or middle-click a window |
+| Rename or create a desktop | `F2` or right-click a tab; `N` or click the create tab |
 
-Click a window to open it or a desktop tab to switch straight to it. Use the
-mouse wheel to page through windows. With **Vim navigation** enabled, `h`/`j`/`k`/`l`
-move the selection and `x` closes a window.
+Click a window to open it, click a desktop tab to switch, and scroll to page
+through windows. `Esc` leaves search or the held dock first; a second press
+closes the overview.
 
-## Search
+## Settings
 
-Press `/` for the current desktop or `Shift+/` (`?`) for all desktops, then type
-to filter by window title or app. You can also click the search field. If it
-already contains a query, focusing it selects that query so you can replace it.
+- **Window tabs**: square previews or poker chips showing a live preview, app
+  icon or title, in four sizes and several color modes.
+- **Desktop strip**: flat or carousel layout with pill, chip or playing-card
+  tabs, optional tucked cards, and create/close animations.
+- **Card art**: built-in vector themes (Yu-Gi-Oh!, Pokémon, Kakegurui and Saiki
+  K) or custom 2:3 portrait PNG/JPG faces. Use artwork you have permission to
+  use.
+- **Held windows**: keep windows with you across desktops, in the grid or in a
+  left/right dock.
+- **Theme**: built-in palettes (Catppuccin, Nord, Dracula) or custom colors,
+  with Acrylic, Mica, Blur, solid or transparent backgrounds.
+- **Other**: search visibility, shortcut hints, animation speed, wrap-around
+  navigation and hover/selection lift.
 
-In all-desktop search, titles show a desktop number (`D1`, `D2`, etc.). Windows
-doesn't provide live previews for inactive desktops, so preview cards and chips
-show an app icon there instead. Selecting one switches desktops first, then
-focuses the window. `Esc` clears the search and returns to the current
-desktop's windows. A new `Win+Tab` session starts with an empty query on the
-current desktop.
-
-## Appearance and layout
-
-The mod's **Settings** tab covers the layout and colors:
-
-- **Window tabs:** Choose square previews or poker chips. Chips can show a
-  circular live preview, an app icon or just the window name, and come in four
-  sizes. Pick theme-based, classic casino, single or custom chip colors.
-- **Desktop strip:** Use a flat row or a carousel, with pill, poker-chip or
-  playing-card tabs. **Tuck playing cards** shows just their upper half at the
-  bottom of the screen; turn it off for full cards. Card size, create/close
-  animations, the strip background and highlight or lift selection are
-  configurable.
-- **Card artwork:** Built-in vector card themes include Yu-Gi-Oh!, Pokémon,
-  Kakegurui and Saiki K, with matching chip palettes. Saiki K uses the show's
-  black/red Japanese title logo; Yu-Gi-Oh! uses the original amber vortex back.
-  No image files are needed. Optional absolute PNG/JPG paths override the card
-  face or face-down create card. Use images you have permission to use; a portrait
-  2:3 ratio (such as 800×1200) works best. Suit symbols can be hidden and the card
-  name can be positioned with X/Y offsets from the top-right corner.
-- **Held windows:** Press `U` or right-click a window to keep it with you as you
-  change desktops. Leave held windows in the grid or put them in a dock on either
-  side. The dock can have a panel or float on its own.
-- **Theme and background:** Choose a built-in palette (including Catppuccin,
-  Nord and Dracula) or set your own colors. Background options include Acrylic,
-  Mica, Blur, Solid and Transparent, with adjustable tint opacity.
-- **Other options:** Hide the search bar until you use it, turn off shortcut
-  hints, adjust animation speed, enable wraparound navigation, or lift hovered,
-  selected and held windows.
-
-### Theme ideas
-
-Good candidates for future vector card backs are **JoJo's Bizarre Adventure**
-(manga halftone and starburst), **Neon Genesis Evangelion** (warning stripes and
-NERV geometry), **Persona 5** (black, red and angular masks), **Sailor Moon**
-(crescent and planetary glyphs), and **Mob Psycho 100** (bold psychic rings).
-These can be built from geometric primitives and typography, without bundling
-copyrighted raster artwork.
+Search by window title or app. All-desktop results show a `D#` label and use app
+icons where live previews are unavailable; selecting one switches to its
+desktop first.
 
 ## Compatibility
 
-- Windows 11 only. The overview appears on the active monitor; it doesn't draw
-  a separate overview on every monitor.
-- Mods that also replace Task View or intercept `Win+Tab` may conflict with this
-  one.
+Windows 11 only. The overview appears on the active monitor. Mods that also
+replace Task View or intercept `Win+Tab` may conflict.
 
-## Building from source
-
-`build.ps1` uses the compiler bundled with Windhawk for a local compile and
-link check. It doesn't install the mod:
-
-```powershell
-.\build.ps1
-```
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for implementation details.
-
-### Artwork preview
-
-![Saiki K and Yu-Gi-Oh! vector card previews](docs/theme-previews.png)
-
-To regenerate this offscreen Direct2D render at small, medium, large, tucked
-and rotated/high-DPI sizes, run `./tools/preview-card-themes.ps1`. It compiles the
-artwork functions directly from the mod, not a separate SVG approximation.
-It does not install the mod or modify Explorer.
+`build.ps1` performs a local compile check; see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for implementation details.
 
 ## License
 

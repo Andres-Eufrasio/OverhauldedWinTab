@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.8.7
+// @version         0.8.8
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -15,111 +15,58 @@
 /*
 # OverhauldedWinTab
 
-OverhauldedWinTab replaces Windows 11 Task View (`Win+Tab`) with a window grid
-and a virtual desktop strip. Switch to a window from its live preview, search
-by title or app, or jump to another desktop without closing the overview.
+OverhauldedWinTab replaces Windows 11 Task View (`Win+Tab`) with a window
+overview and a virtual desktop strip. Open windows from live previews, and
+search or move windows and desktops without closing the overview.
+
+![Saiki K and Yu-Gi-Oh! card artwork](docs/theme-previews.png)
 
 ## Controls
 
-| Key or action | What it does |
+| Action | Keys |
 | --- | --- |
-| `Win+Tab` | Open or close the overview |
-| Arrow keys | Move through windows, the held dock or desktops |
-| `Tab` | Cycle between the window grid, held dock (if enabled) and desktop strip |
-| `Enter` | Open the selected window or switch to the selected desktop |
-| `Esc` | Leave the dock or search; press again to close the overview |
-| `/` | Search windows on the current desktop |
-| `Shift+/` (`?`) | Search windows on every desktop |
-| `1`–`9` | Switch to a numbered desktop |
-| `Shift+1`–`Shift+9`, or `M` then `1`–`9` | Move the selected window to that desktop |
-| `Ctrl+Left` / `Ctrl+Right` | Switch to the previous or next desktop |
-| `Shift+Left` / `Shift+Right` | Move the selected window to an adjacent desktop |
-| `U`, or right-click a window | Hold or release a window |
-| `Delete`, or middle-click a window | Close a window; `Delete` closes the active desktop when the strip is focused |
-| `F2`, or right-click a desktop tab | Rename a desktop |
-| `N` (strip focused), or click the create tab | Create a desktop |
+| Open or close the overview | `Win+Tab` |
+| Navigate | Arrow keys, or `h` `j` `k` `l` with Vim navigation |
+| Cycle grid, held dock and desktop strip | `Tab` |
+| Open the selected window or switch desktop | `Enter` |
+| Search the current / all desktops | `/` / `?` |
+| Switch desktop | `1`–`9`, `Ctrl+Left` / `Ctrl+Right` |
+| Move the selected window | `Shift+1`–`Shift+9`, `Shift+Left` / `Shift+Right`, or `M` then a number |
+| Hold or release a window | `U`, or right-click a window |
+| Close a window or desktop | `Delete`, or middle-click a window |
+| Rename or create a desktop | `F2` or right-click a tab; `N` or click the create tab |
 
-Click a window to open it or a desktop tab to switch straight to it. Use the
-mouse wheel to page through windows. With **Vim navigation** enabled, `h`/`j`/`k`/`l`
-move the selection and `x` closes a window.
+Click a window to open it, click a desktop tab to switch, and scroll to page
+through windows. `Esc` leaves search or the held dock first; a second press
+closes the overview.
 
-## Search
+## Settings
 
-Press `/` for the current desktop or `Shift+/` (`?`) for all desktops, then type
-to filter by window title or app. You can also click the search field. If it
-already contains a query, focusing it selects that query so you can replace it.
+- **Window tabs**: square previews or poker chips showing a live preview, app
+  icon or title, in four sizes and several color modes.
+- **Desktop strip**: flat or carousel layout with pill, chip or playing-card
+  tabs, optional tucked cards, and create/close animations.
+- **Card art**: built-in vector themes (Yu-Gi-Oh!, Pokémon, Kakegurui and Saiki
+  K) or custom 2:3 portrait PNG/JPG faces. Use artwork you have permission to
+  use.
+- **Held windows**: keep windows with you across desktops, in the grid or in a
+  left/right dock.
+- **Theme**: built-in palettes (Catppuccin, Nord, Dracula) or custom colors,
+  with Acrylic, Mica, Blur, solid or transparent backgrounds.
+- **Other**: search visibility, shortcut hints, animation speed, wrap-around
+  navigation and hover/selection lift.
 
-In all-desktop search, titles show a desktop number (`D1`, `D2`, etc.). Windows
-doesn't provide live previews for inactive desktops, so preview cards and chips
-show an app icon there instead. Selecting one switches desktops first, then
-focuses the window. `Esc` clears the search and returns to the current
-desktop's windows. A new `Win+Tab` session starts with an empty query on the
-current desktop.
-
-## Appearance and layout
-
-The mod's **Settings** tab covers the layout and colors:
-
-- **Window tabs:** Choose square previews or poker chips. Chips can show a
-  circular live preview, an app icon or just the window name, and come in four
-  sizes. Pick theme-based, classic casino, single or custom chip colors.
-- **Desktop strip:** Use a flat row or a carousel, with pill, poker-chip or
-  playing-card tabs. **Tuck playing cards** shows just their upper half at the
-  bottom of the screen; turn it off for full cards. Card size, create/close
-  animations, the strip background and highlight or lift selection are
-  configurable.
-- **Card artwork:** Built-in vector card themes include Yu-Gi-Oh!, Pokémon,
-  Kakegurui and Saiki K, with matching chip palettes. Saiki K uses the show's
-  black/red Japanese title logo; Yu-Gi-Oh! uses the original amber vortex back.
-  No image files are needed. Optional absolute PNG/JPG paths override the card
-  face or face-down create card. Use images you have permission to use; a portrait
-  2:3 ratio (such as 800×1200) works best. Suit symbols can be hidden and the card
-  name can be positioned with X/Y offsets from the top-right corner.
-- **Held windows:** Press `U` or right-click a window to keep it with you as you
-  change desktops. Leave held windows in the grid or put them in a dock on either
-  side. The dock can have a panel or float on its own.
-- **Theme and background:** Choose a built-in palette (including Catppuccin,
-  Nord and Dracula) or set your own colors. Background options include Acrylic,
-  Mica, Blur, Solid and Transparent, with adjustable tint opacity.
-- **Other options:** Hide the search bar until you use it, turn off shortcut
-  hints, adjust animation speed, enable wraparound navigation, or lift hovered,
-  selected and held windows.
-
-### Theme ideas
-
-Good candidates for future vector card backs are **JoJo's Bizarre Adventure**
-(manga halftone and starburst), **Neon Genesis Evangelion** (warning stripes and
-NERV geometry), **Persona 5** (black, red and angular masks), **Sailor Moon**
-(crescent and planetary glyphs), and **Mob Psycho 100** (bold psychic rings).
-These can be built from geometric primitives and typography, without bundling
-copyrighted raster artwork.
+Search by window title or app. All-desktop results show a `D#` label and use app
+icons where live previews are unavailable; selecting one switches to its
+desktop first.
 
 ## Compatibility
 
-- Windows 11 only. The overview appears on the active monitor; it doesn't draw
-  a separate overview on every monitor.
-- Mods that also replace Task View or intercept `Win+Tab` may conflict with this
-  one.
+Windows 11 only. The overview appears on the active monitor. Mods that also
+replace Task View or intercept `Win+Tab` may conflict.
 
-## Building from source
-
-`build.ps1` uses the compiler bundled with Windhawk for a local compile and
-link check. It doesn't install the mod:
-
-```powershell
-.\build.ps1
-```
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for implementation details.
-
-### Artwork preview
-
-![Saiki K and Yu-Gi-Oh! vector card previews](docs/theme-previews.png)
-
-To regenerate this offscreen Direct2D render at small, medium, large, tucked
-and rotated/high-DPI sizes, run `./tools/preview-card-themes.ps1`. It compiles the
-artwork functions directly from the mod, not a separate SVG approximation.
-It does not install the mod or modify Explorer.
+`build.ps1` performs a local compile check; see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for implementation details.
 
 ## License
 
@@ -362,6 +309,14 @@ static const WCHAR kExplorerThreadName[] = L"Immersive Shell";
 // Flag forwarded by the Explorer component.
 static const WPARAM kHotkeyFlagWinTab = 1;
 
+// Escape and Enter are registered directly on the overlay while it is visible.
+// That keeps them working even if the shell briefly takes the foreground during
+// a desktop switch, when the overlay is visible but no longer receives
+// WM_KEYDOWN. Registering Enter also stops a repeated/new Enter from reaching
+// the window that took focus and opening it.
+static const int kHotkeyEscape = 0x4F57;
+static const int kHotkeyReturn = 0x4F58;
+
 // Thread messages used by the tool process.
 #define WM_UI_QUIT (WM_APP + 1)
 #define WM_UI_SETTINGS (WM_APP + 2)
@@ -375,6 +330,7 @@ enum
     kTimerDesktop = 4,
     kTimerHeldWatch = 5,
     kTimerCarousel = 6,
+    kTimerReturnRelease = 7,
 };
 
 // Manual GUIDs: the tool is compiled without __uuidof support.
@@ -591,7 +547,19 @@ static float g_targetPresence = 0.0f;
 static ULONGLONG g_lastFrameTick = 0;
 static ULONGLONG g_shownAtTick = 0;
 static HWND g_originWindow = nullptr;
+// Active desktop when the overview opened. Closing after navigating elsewhere
+// must not foreground a window from that old desktop, even if it was a held
+// task that followed the user.
+static GUID g_originDesktopId = {};
+static bool g_hasOriginDesktopId = false;
 static bool g_closingForActivation = false;
+// One physical Enter press must produce one action. Windows auto-repeats a held
+// Enter, and the key must keep being swallowed until it is released or the
+// window that regains focus after a hide will receive the repeat and open.
+static bool g_returnKeyLatch = false;
+// Enter on a desktop tab asks for a desktop, not a window, so hiding for it
+// must not foreground the window that was active before the overview opened.
+static bool g_desktopEnterHide = false;
 
 // Monitor geometry, in physical pixels.
 static int g_monitorX = 0;
@@ -627,6 +595,12 @@ static bool g_pointerWindowSelection = false;
 static bool g_hoverCreate = false;
 static bool g_hoverSearch = false;
 static bool g_hoverSearchClear = false;
+// Arrow/vim navigation takes ownership of the grid until the pointer actually
+// changes position. This prevents an old WM_MOUSEMOVE at the same coordinates
+// from immediately restoring hover focus over the keyboard selection.
+static bool g_ignorePointerUntilMoved = false;
+static bool g_hasLastPointerPosition = false;
+static POINT g_lastPointerPosition = {};
 static bool g_createDragging = false;
 static POINT g_createDragStart = {};
 static float g_createPull = 0.0f;
@@ -2272,6 +2246,10 @@ static void MoveSelectedWindowToDesktopIndex(int index)
     if (g_desktops.empty())
         return;
     if (index < 0 || index >= static_cast<int>(g_desktops.size()))
+        return;
+    // While the desktop strip owns the keyboard, number keys switch desktops.
+    // Never move a window from a desktop-tab interaction.
+    if (g_focusStrip)
         return;
 
     HWND window = SelectedWindow();
@@ -7321,6 +7299,20 @@ static void ForceForeground(HWND hwnd)
         AttachThreadInput(foregroundThread, thisThread, FALSE);
 }
 
+// The overlay can briefly lose the foreground while the shell switches
+// desktops. Focus-loss closing is intentionally suppressed during that window,
+// so once the action settles take the keyboard back. Without this the overlay
+// can stay on screen while key presses (including Escape) go to another
+// window.
+static void ReclaimOverlayForeground()
+{
+    if (!g_overlay || !g_visible || !g_closeOnFocusLoss || g_busy ||
+        g_closingForActivation || g_targetPresence <= 0.0f)
+        return;
+    if (GetForegroundWindow() != g_overlay)
+        ForceForeground(g_overlay);
+}
+
 static void UpdateMonitorForWindow(HWND window)
 {
     HMONITOR monitor = MonitorFromWindow(window ? window : GetForegroundWindow(),
@@ -7519,6 +7511,7 @@ static void ShowOverlay()
         g_originWindow = GetForegroundWindow();
     if (g_originWindow == g_overlay)
         g_originWindow = nullptr;
+    g_hasOriginDesktopId = ReadActiveDesktopId(&g_originDesktopId);
 
     UpdateMonitorForWindow(g_originWindow);
     ApplyBackdrop(g_overlay);
@@ -7540,6 +7533,14 @@ static void ShowOverlay()
     g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
     g_hoverDock = g_hoverDockClose = -1;
     g_hoverCreate = g_hoverSearch = g_hoverSearchClear = false;
+    g_pointerWindowSelection = false;
+    g_ignorePointerUntilMoved = false;
+    g_hasLastPointerPosition = false;
+    g_desktopEnterHide = false;
+    // Reopening while Enter is still down must not replay the press on the new
+    // overview; the release timer clears the latch.
+    if (!(GetAsyncKeyState(VK_RETURN) & 0x8000))
+        g_returnKeyLatch = false;
     g_createDragging = false;
     g_createPull = 0.0f;
     g_busy = false;
@@ -7574,6 +7575,16 @@ static void ShowOverlay()
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
     ForceForeground(g_overlay);
 
+    // Keep Escape and Enter working even while another window owns the
+    // keyboard (which happens briefly during desktop switches).
+    RegisterHotKey(g_overlay, kHotkeyEscape, 0, VK_ESCAPE);
+    RegisterHotKey(g_overlay, kHotkeyReturn, 0, VK_RETURN);
+
+    // If the hotkey survived a hide because Enter was still held, keep polling
+    // for its release so it is not unregistered too early.
+    if (g_returnKeyLatch)
+        SetTimer(g_overlay, kTimerReturnRelease, 15, nullptr);
+
     SetTimer(g_overlay, kTimerFrame, 16, nullptr);
     SetTimer(g_overlay, kTimerIdle, 700, nullptr);
     InvalidateRect(g_overlay, nullptr, FALSE);
@@ -7585,7 +7596,15 @@ static void FinishHide()
     ReleaseThumbnails();
     StopOverlayTimers();
     if (g_overlay)
+    {
+        UnregisterHotKey(g_overlay, kHotkeyEscape);
+        // Keep Enter registered while the physical key is still down. This is
+        // what stops a held or repeated Enter from reaching the window that is
+        // about to regain focus and opening it. The release timer removes it.
+        if (!g_returnKeyLatch)
+            UnregisterHotKey(g_overlay, kHotkeyReturn);
         ShowWindow(g_overlay, SW_HIDE);
+    }
     g_visible = false;
     g_presence = 0.0f;
     g_targetPresence = 0.0f;
@@ -7599,6 +7618,29 @@ static void FinishHide()
     g_pendingActivateDesktop = -1;
     ClearCardAnimation();
     SetControlReady(true);
+}
+
+// Hiding normally returns focus to the window that was active when the
+// overview opened. That must not pull the user back to another virtual desktop:
+// foregrounding a window that lives elsewhere (or was deliberately left behind
+// by an Enter-on-desktop action) looks like the window opened and its desktop
+// moved. Let the shell pick a window on the active desktop instead.
+static void RestoreOriginWindow()
+{
+    if (g_closingForActivation || g_desktopEnterHide)
+        return;
+    if (!g_originWindow || !IsWindow(g_originWindow))
+        return;
+    if (!IsWindowOnCurrentDesktop(g_originWindow))
+        return;
+    // The overview may have been used to visit another desktop (including a
+    // held task that followed). Returning focus to the opening window would
+    // then yank the user back or open a window they deliberately left behind.
+    GUID current = {};
+    if (g_hasOriginDesktopId && ReadActiveDesktopId(&current) &&
+        !IsEqualGUID(current, g_originDesktopId))
+        return;
+    SetForegroundWindow(g_originWindow);
 }
 
 static void HideOverlay(bool immediate)
@@ -7624,8 +7666,8 @@ static void HideOverlay(bool immediate)
         g_presence = 0.0f;
         g_targetPresence = 0.0f;
         FinishHide();
-        if (!g_closingForActivation && g_originWindow && IsWindow(g_originWindow))
-            SetForegroundWindow(g_originWindow);
+        RestoreOriginWindow();
+        g_desktopEnterHide = false;
         return;
     }
 
@@ -7647,6 +7689,11 @@ static void ToggleOverlay()
 
 static void ActivateWindowEntry(int entry)
 {
+    // Desktop-tab interactions are desktop-only. This is the final guard: a
+    // duplicate, queued or delayed activation must never open a window while
+    // the strip owns the keyboard.
+    if (g_focusStrip)
+        return;
     if (entry < 0 || entry >= static_cast<int>(g_windows.size()))
         return;
     HWND target = g_windows[entry].hwnd;
@@ -7732,12 +7779,32 @@ static void CloseEntry(int filteredIndex)
     CloseWindowEntry(g_filtered[filteredIndex]);
 }
 
+// Keyboard navigation owns the highlight until the pointer physically moves.
+// The current cursor position is captured so the WM_MOUSEMOVE messages Windows
+// synthesizes after a key press (identical coordinates) cannot steal it back.
+static void TakeKeyboardPointerOwnership()
+{
+    g_pointerWindowSelection = false;
+    g_ignorePointerUntilMoved = true;
+    g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
+    g_hoverDock = g_hoverDockClose = -1;
+    g_hoverCreate = g_hoverSearch = g_hoverSearchClear = false;
+
+    POINT pt = {};
+    if (g_overlay && GetCursorPos(&pt))
+    {
+        ScreenToClient(g_overlay, &pt);
+        g_lastPointerPosition = pt;
+        g_hasLastPointerPosition = true;
+    }
+}
+
 static void MoveSelection(int dx, int dy)
 {
     // The pointer updated g_selected to its last hovered card but deliberately
     // suppressed the keyboard highlight. The first arrow/h/j/k/l now advances
     // from that card and restores normal keyboard focus.
-    g_pointerWindowSelection = false;
+    TakeKeyboardPointerOwnership();
     RebuildDisplayList();
     const int count = static_cast<int>(g_display.size());
     if (count == 0)
@@ -7803,6 +7870,8 @@ static void SetSearchAllDesktops(bool all)
     InvalidateRect(g_overlay, nullptr, FALSE);
 }
 
+// Leaves the search field and returns to the current desktop's windows. Esc
+// uses this first; a second Esc then closes the overview.
 static void ExitSearch()
 {
     const bool hadAllDesktops = g_searchAllDesktops;
@@ -7853,6 +7922,15 @@ static void FocusSearch()
 
 static void UpdateHover(int x, int y)
 {
+    // Keyboard navigation keeps control while the pointer is stationary. Only
+    // a different coordinate hands focus back to the mouse.
+    if (g_ignorePointerUntilMoved && g_hasLastPointerPosition &&
+        x == g_lastPointerPosition.x && y == g_lastPointerPosition.y)
+        return;
+    if (g_ignorePointerUntilMoved)
+        g_ignorePointerUntilMoved = false;
+    g_lastPointerPosition = {x, y};
+    g_hasLastPointerPosition = true;
     g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
     g_hoverDock = g_hoverDockClose = -1;
     g_hoverCreate = g_hoverSearch = g_hoverSearchClear = false;
@@ -7949,6 +8027,10 @@ static void OnLeftClick(int x, int y)
         InvalidateRect(g_overlay, nullptr, FALSE);
     }
     g_focusDock = false;
+    // A click on a window, dock item or empty space hands keyboard focus back to
+    // the grid. Without this a previous desktop-tab focus would make Enter
+    // switch desktops even though the user just clicked a window card.
+    g_focusStrip = false;
 
     for (int i = 0; i < static_cast<int>(g_cards.size()); i++)
     {
@@ -8018,6 +8100,7 @@ static bool DockExists()
 
 static void MoveDockSelection(int delta)
 {
+    TakeKeyboardPointerOwnership();
     const int count = static_cast<int>(g_dockCards.size());
     if (count <= 0)
     {
@@ -8098,6 +8181,7 @@ static void CycleFocus()
 
 static void MoveStripSelection(int delta)
 {
+    TakeKeyboardPointerOwnership();
     const int count = static_cast<int>(g_desktops.size());
     if (count <= 0)
         return;
@@ -8116,8 +8200,50 @@ static void MoveStripSelection(int delta)
     InvalidateRect(g_overlay, nullptr, FALSE);
 }
 
+// Enter on a desktop tab is a desktop-only action. It must never fall through
+// to ActivateEntry(), which would open the selected window (and can switch back
+// to that window's desktop instead of the chosen one).
+static void ActivateDesktopSelection(int desktop)
+{
+    if (desktop < 0 || desktop >= static_cast<int>(g_desktops.size()))
+        return;
+
+    // A queued window activation or move must not survive a desktop Enter.
+    g_pendingMove = false;
+    g_pendingActivateWindow = nullptr;
+    g_pendingActivateDesktop = -1;
+
+    g_focusDock = false;
+    g_focusStrip = true;
+    g_desktopSelected = desktop;
+    if (desktop != g_currentDesktop)
+    {
+        BeginDesktopAction(desktop, false, false);
+    }
+    else
+    {
+        // Enter on the desktop that is already active closes the overview, as
+        // before; it still never activates the window selection. Suppress the
+        // usual origin-window restore as well: the user chose a desktop, and
+        // that window may belong to a desktop they just left.
+        g_desktopEnterHide = true;
+        HideOverlay(false);
+    }
+}
+
 static void OnKeyDown(WPARAM key)
 {
+    // A held Enter auto-repeats, and the latch survives the hide so the repeat
+    // cannot land on the window that regains focus. One press = one action.
+    if (key == VK_RETURN)
+    {
+        if (g_returnKeyLatch)
+            return;
+        g_returnKeyLatch = true;
+        if (g_overlay)
+            SetTimer(g_overlay, kTimerReturnRelease, 15, nullptr);
+    }
+
     // The pre-create card draw owns the keyboard briefly. Escape cancels it;
     // every other key is ignored so the pending desktop is not lost mid-flight.
     if (g_createAfterDraw)
@@ -8136,7 +8262,9 @@ static void OnKeyDown(WPARAM key)
         if (key == VK_RETURN)
             CommitRenameDesktop();
         else if (key == VK_ESCAPE)
+        {
             CancelRenameDesktop();
+        }
         else if (key == VK_BACK)
         {
             if (!g_renameText.empty())
@@ -8178,6 +8306,7 @@ static void OnKeyDown(WPARAM key)
     {
         if (key == VK_ESCAPE)
         {
+            // Leave the search first; Esc from the normal view closes.
             ExitSearch();
         }
         else if (key == VK_RETURN)
@@ -8244,18 +8373,34 @@ static void OnKeyDown(WPARAM key)
     case VK_RETURN:
         if (g_focusStrip)
         {
-            if (g_desktopSelected != g_currentDesktop)
-                BeginDesktopAction(g_desktopSelected, false, false);
-            else
-                HideOverlay(false);
+            ActivateDesktopSelection(g_desktopSelected);
         }
         else if (g_focusDock)
         {
+            // The dock owns the keyboard; a pill under the pointer must not
+            // steal Enter from the selected dock item.
             ActivateDockSelection();
         }
         else
         {
-            ActivateEntry(g_selected);
+            // A desktop tab under the pointer is the obvious Enter target even
+            // when the window grid still owns keyboard focus. Resolve it from
+            // the live cursor position: opening the overview with the pointer
+            // already parked on a tab produces no WM_MOUSEMOVE, so the cached
+            // hover index can still be -1 (or stale after a desktop switch).
+            // Arrow/vim navigation owns the selection until the pointer moves,
+            // so it deliberately skips this lookup.
+            int pill = -1;
+            if (!g_ignorePointerUntilMoved && g_overlay)
+            {
+                POINT pt = {};
+                if (GetCursorPos(&pt) && ScreenToClient(g_overlay, &pt))
+                    pill = PillAt(static_cast<float>(pt.x), static_cast<float>(pt.y));
+            }
+            if (pill >= 0 && pill < static_cast<int>(g_pills.size()))
+                ActivateDesktopSelection(g_pills[pill].desktop);
+            else
+                ActivateEntry(g_selected);
         }
         return;
 
@@ -8515,6 +8660,10 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         g_hoverCard = g_hoverClose = g_hoverPill = g_hoverPillClose = -1;
         g_hoverDock = g_hoverDockClose = -1;
         g_hoverCreate = g_hoverSearch = g_hoverSearchClear = false;
+        // Leaving the overlay is real pointer movement, so the mouse may take
+        // hover back the next time it enters.
+        g_ignorePointerUntilMoved = false;
+        g_hasLastPointerPosition = false;
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
 
@@ -8666,6 +8815,25 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         return TRUE;
     }
 
+    case WM_HOTKEY:
+        // These keys are registered while the overlay is visible so they still
+        // reach it if focus was temporarily taken by a desktop switch.
+        if (wParam == kHotkeyEscape)
+        {
+            OnKeyDown(VK_ESCAPE);
+            return 0;
+        }
+        if (wParam == kHotkeyReturn)
+        {
+            // The Return hotkey stays registered after a hide while the key is
+            // still held; swallow those repeats instead of acting on a hidden
+            // overlay (or letting them reach the window that regained focus).
+            if (g_visible)
+                OnKeyDown(VK_RETURN);
+            return 0;
+        }
+        break;
+
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
         OnKeyDown(wParam);
@@ -8788,6 +8956,20 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         return 0;
 
     case WM_TIMER:
+        if (wParam == kTimerReturnRelease)
+        {
+            // Keep the Return hotkey until the physical key is up. If the
+            // overlay is visible again, leave the registration alone; FinishHide
+            // will remove it when the overview next closes.
+            if ((GetAsyncKeyState(VK_RETURN) & 0x8000) == 0)
+            {
+                g_returnKeyLatch = false;
+                KillTimer(hwnd, kTimerReturnRelease);
+                if (!g_visible)
+                    UnregisterHotKey(hwnd, kHotkeyReturn);
+            }
+            return 0;
+        }
         if (wParam == kTimerFrame)
         {
             const ULONGLONG now = GetTickCount64();
@@ -8806,8 +8988,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             if (g_targetPresence <= 0.0f && g_presence <= 0.0f)
             {
                 FinishHide();
-                if (!g_closingForActivation && g_originWindow && IsWindow(g_originWindow))
-                    SetForegroundWindow(g_originWindow);
+                RestoreOriginWindow();
+                g_desktopEnterHide = false;
                 return 0;
             }
 
@@ -8855,6 +9037,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             PruneHeldTasks();
             if (g_held.empty())
                 StopHeldWatch();
+            ReclaimOverlayForeground();
             return 0;
         }
         if (wParam == kTimerCarousel)
@@ -8978,6 +9161,9 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 return 0;
             }
 
+            // The desktop switch is finished; take the keyboard back if the
+            // shell left the foreground elsewhere.
+            ReclaimOverlayForeground();
             RebuildWindowList();
             g_desktopSelected = g_currentDesktop;
             if (createdDesktop)
@@ -9177,6 +9363,8 @@ static void ShutdownUi()
     }
     if (g_overlay)
     {
+        UnregisterHotKey(g_overlay, kHotkeyEscape);
+        UnregisterHotKey(g_overlay, kHotkeyReturn);
         DestroyWindow(g_overlay);
         g_overlay = nullptr;
     }
