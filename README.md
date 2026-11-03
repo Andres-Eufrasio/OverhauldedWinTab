@@ -33,7 +33,6 @@ closes the overview.
   tabs, optional tucked cards, and create/close animations.
 - **Card art**: built-in vector themes (Yu-Gi-Oh!, Pokémon, Kakegurui and Saiki
   K) or custom 2:3 portrait PNG/JPG faces.
-  use.
 - **Held windows**: keep windows with you across desktops, in the grid or in a
   left/right dock.
 - **Theme**: built-in palettes (Catppuccin, Nord, Dracula) or custom colors,
