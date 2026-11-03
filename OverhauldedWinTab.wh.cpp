@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.8.8
+// @version         0.9.0
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -668,6 +668,8 @@ static int g_desktopActionStartIndex = -1;
 static ULONGLONG g_busySince = 0;
 static bool g_keepThumbnailsWhileBusy = false;
 static float g_carouselPos = 0.0f;
+// Small even carousels keep fixed slots instead of wrapping past each other.
+static int g_carouselAnchor = 0;
 static ULONGLONG g_lastCarouselTick = 0;
 
 // Direct2D / DirectWrite.
@@ -813,6 +815,7 @@ static void BeginRenameDesktop(int index);
 static void CommitRenameDesktop();
 static void CancelRenameDesktop();
 static void KickCarousel();
+static void ResetCarouselPosition(int desktop, int count);
 static float BackgroundScrimAlpha();
 static bool DockExists();
 static void ClearCardAnimation();
@@ -1909,6 +1912,7 @@ static std::wstring DesktopNameFromRegistry(const GUID& id, int index)
 
 static void RefreshDesktops()
 {
+    const size_t previousCount = g_desktops.size();
     g_desktops.clear();
 
     std::vector<BYTE> ids;
@@ -1972,6 +1976,8 @@ static void RefreshDesktops()
     g_currentDesktop = current >= 0 ? current : 0;
     if (g_desktopSelected >= static_cast<int>(g_desktops.size()) || g_desktopSelected < 0)
         g_desktopSelected = g_currentDesktop;
+    if (g_desktops.size() != previousCount)
+        ResetCarouselPosition(g_currentDesktop, static_cast<int>(g_desktops.size()));
 }
 
 // Reads the id of the desktop that is active right now. Used while the overlay
@@ -2525,12 +2531,35 @@ static bool MoveWindowToDesktopInternal(HWND window, const GUID& id)
     return SUCCEEDED(hr);
 }
 
-// Signed distance from the carousel position to `value`, wrapped into
-// (-count/2, count/2] so the shortest way around the wheel wins.
+// Keep two- and four-desktop carousels in stable slots for the entire session.
+// Preserve the initial wheel order around the active desktop; navigation only
+// moves the centre, never a neighbour to the other side of the wheel.
+static float CarouselDesktopPosition(int desktop, int count)
+{
+    if (count != 2 && count != 4)
+        return static_cast<float>(desktop);
+    int slot = (desktop - g_carouselAnchor + count) % count;
+    if (slot > count / 2)
+        slot -= count;
+    return static_cast<float>(slot);
+}
+
+static void ResetCarouselPosition(int desktop, int count)
+{
+    g_carouselAnchor = desktop;
+    g_carouselPos = CarouselDesktopPosition(desktop, count);
+}
+
+// Signed distance from the carousel position to a desktop or animation target.
+// Two and four desktops must not wrap: tabs keep their left/right order
+// throughout the animation, including its final frame. Other wheels take the
+// shortest path, wrapped into (-count/2, count/2].
 static float WrapDelta(float value, int count)
 {
     if (count <= 1)
         return 0.0f;
+    if (count == 2 || count == 4)
+        return value;
     const float n = static_cast<float>(count);
     float d = std::fmod(value, n);
     if (d < 0.0f)
@@ -2538,6 +2567,17 @@ static float WrapDelta(float value, int count)
     if (d > n / 2.0f)
         d -= n;
     return d;
+}
+
+static bool AdvanceCarousel(int desktop, int count, float blend)
+{
+    const float targetPos = CarouselDesktopPosition(desktop, count);
+    const float delta = WrapDelta(targetPos - g_carouselPos, count);
+    g_carouselPos += delta * std::min(1.0f, blend);
+    if (std::fabs(delta) >= 0.002f)
+        return false;
+    g_carouselPos = targetPos;
+    return true;
 }
 
 // The pill the carousel should centre: the strip selection while it has focus,
@@ -2908,7 +2948,8 @@ static void RebuildPills()
 
         for (int i = 0; i < count; i++)
         {
-            const float d = WrapDelta(static_cast<float>(i) - g_carouselPos, count);
+            const float d = WrapDelta(CarouselDesktopPosition(i, count) -
+                                          g_carouselPos, count);
             const float ad = std::fabs(d);
 
             PillView pill;
@@ -3006,7 +3047,8 @@ static void RebuildPills()
 
         for (int i = 0; i < count; i++)
         {
-            const float d = WrapDelta(static_cast<float>(i) - g_carouselPos, count);
+            const float d = WrapDelta(CarouselDesktopPosition(i, count) -
+                                          g_carouselPos, count);
             const float ad = std::fabs(d);
 
             PillView pill;
@@ -7046,10 +7088,13 @@ static void RenderScene(HDC dc)
 
         const RectF badge = {face.l + 10.0f * s, face.t + 9.0f * s,
                              face.l + 34.0f * s, face.b - 9.0f * s};
-        const bool badgeAccent = active || emphasis > 0.0f;
+        // Keyboard selection can move to an inactive desktop before Enter
+        // switches to it. Keep that pill highlighted without turning its
+        // number into an active, white-on-accent badge.
+        const bool badgeAccent = active;
         FillRound(badge, 6.0f * s,
                   badgeAccent ? g_theme.accent : g_theme.text,
-                  (selected ? 0.98f : badgeAccent ? 0.85f : 0.12f) * pill.alpha);
+                  (badgeAccent ? 0.85f : selected ? 0.20f : 0.12f) * pill.alpha);
         DrawTextBlock(std::to_wstring(pill.desktop + 1), PillFormat(), badge,
                       badgeAccent ? g_theme.onAccent : g_theme.text,
                       DWRITE_TEXT_ALIGNMENT_CENTER, 0.95f * pill.alpha);
@@ -7558,7 +7603,7 @@ static void ShowOverlay()
     RefreshDesktops();
     RebuildWindowList();
     g_desktopSelected = g_currentDesktop;
-    g_carouselPos = static_cast<float>(g_currentDesktop);
+    ResetCarouselPosition(g_currentDesktop, static_cast<int>(g_desktops.size()));
     if (g_overlay)
         KillTimer(g_overlay, kTimerCarousel);
 
@@ -9054,18 +9099,11 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             g_lastCarouselTick = now;
             dt = std::min(dt, 0.05f);
 
-            const int target = StripTarget();
-            const float delta = WrapDelta(
-                static_cast<float>(target) - g_carouselPos,
-                static_cast<int>(g_desktops.size()));
             const float rate =
                 10.0f * 100.0f / static_cast<float>(std::max(50, g_animSpeedPercent));
-            g_carouselPos += delta * std::min(1.0f, dt * rate);
-            if (std::fabs(delta) < 0.002f)
-            {
-                g_carouselPos = static_cast<float>(target);
+            if (AdvanceCarousel(StripTarget(), static_cast<int>(g_desktops.size()),
+                                dt * rate))
                 KillTimer(hwnd, kTimerCarousel);
-            }
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
@@ -9168,7 +9206,8 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             if (createdDesktop)
             {
                 KillTimer(hwnd, kTimerCarousel);
-                g_carouselPos = static_cast<float>(g_currentDesktop);
+                g_carouselPos = CarouselDesktopPosition(
+                    g_currentDesktop, static_cast<int>(g_desktops.size()));
             }
             else
             {
@@ -9444,7 +9483,8 @@ static DWORD WINAPI UiThreadProc(LPVOID)
                 // ShowOverlay() instead.
                 if (g_overlay && !g_visible)
                     ApplyBackdrop(g_overlay);
-                g_carouselPos = static_cast<float>(StripTarget());
+                g_carouselPos = CarouselDesktopPosition(
+                    StripTarget(), static_cast<int>(g_desktops.size()));
                 if (g_overlay)
                 {
                     KillTimer(g_overlay, kTimerCarousel);
