@@ -85,6 +85,15 @@ The mod's **Settings** tab covers the layout and colors:
   hints, adjust animation speed, enable wraparound navigation, or lift hovered,
   selected and held windows.
 
+### Theme ideas
+
+Good candidates for future vector card backs are **JoJo's Bizarre Adventure**
+(manga halftone and starburst), **Neon Genesis Evangelion** (warning stripes and
+NERV geometry), **Persona 5** (black, red and angular masks), **Sailor Moon**
+(crescent and planetary glyphs), and **Mob Psycho 100** (bold psychic rings).
+These can be built from geometric primitives and typography, without bundling
+copyrighted raster artwork.
+
 ## Compatibility
 
 - Windows 11 only. The overview appears on the active monitor; it doesn't draw
@@ -102,6 +111,15 @@ link check. It doesn't install the mod:
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for implementation details.
+
+### Artwork preview
+
+![Saiki K and Yu-Gi-Oh! vector card previews](docs/theme-previews.png)
+
+To regenerate this offscreen Direct2D render at small, medium, large, tucked
+and rotated/high-DPI sizes, run `./tools/preview-card-themes.ps1`. It compiles the
+artwork functions directly from the mod, not a separate SVG approximation.
+It does not install the mod or modify Explorer.
 
 ## License
 
