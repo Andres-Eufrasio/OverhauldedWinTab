@@ -53,12 +53,13 @@ The mod's **Settings** tab covers the layout and colors:
   bottom of the screen; turn it off for full cards. Card size, create/close
   animations, the strip background and highlight or lift selection are
   configurable.
-- **Card artwork:** Set an absolute PNG/JPG path for the card face or the
-  face-down create card. Optional card themes provide matching chip palettes:
-  Yu-Gi-Oh!, Pokémon and Kakegurui. Artwork is not bundled; use files you have
-  permission to use. Card artwork works best at a portrait 2:3 ratio, such as
-  800×1200. Suit symbols can be hidden and the card name can be positioned with
-  X/Y offsets from the top-right corner.
+- **Card artwork:** Built-in vector card themes include Yu-Gi-Oh!, Pokémon,
+  Kakegurui and Saiki K, with matching chip palettes. Saiki K uses the show's
+  black/red Japanese title logo; Yu-Gi-Oh! uses the original amber vortex back.
+  No image files are needed. Optional absolute PNG/JPG paths override the card
+  face or face-down create card. Use images you have permission to use; a portrait
+  2:3 ratio (such as 800×1200) works best. Suit symbols can be hidden and the card
+  name can be positioned with X/Y offsets from the top-right corner.
 - **Held windows:** Press `U` or right-click a window to keep it with you as you
   change desktops. Leave held windows in the grid or put them in a dock on either
   side. The dock can have a panel or float on its own.
@@ -68,6 +69,15 @@ The mod's **Settings** tab covers the layout and colors:
 - **Other options:** Hide the search bar until you use it, turn off shortcut
   hints, adjust animation speed, enable wraparound navigation, or lift hovered,
   selected and held windows.
+
+### Theme ideas
+
+Good candidates for future vector card backs are **JoJo's Bizarre Adventure**
+(manga halftone and starburst), **Neon Genesis Evangelion** (warning stripes and
+NERV geometry), **Persona 5** (black, red and angular masks), **Sailor Moon**
+(crescent and planetary glyphs), and **Mob Psycho 100** (bold psychic rings).
+These can be built from geometric primitives and typography, without bundling
+copyrighted raster artwork.
 
 ## Compatibility
 
@@ -86,6 +96,15 @@ link check. It doesn't install the mod:
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for implementation details.
+
+### Artwork preview
+
+![Saiki K and Yu-Gi-Oh! vector card previews](docs/theme-previews.png)
+
+To regenerate this offscreen Direct2D render at small, medium, large, tucked
+and rotated/high-DPI sizes, run `./tools/preview-card-themes.ps1`. It compiles the
+artwork functions directly from the mod, not a separate SVG approximation.
+It does not install the mod or modify Explorer.
 
 ## License
 

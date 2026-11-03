@@ -177,6 +177,27 @@ the close-button red). `ResolveTheme()` fills it from the selected `Appearance.T
 The renderer reads `g_theme` everywhere instead of literals, so the selected
 palette and the backdrop effect stay independent.
 
+Named playing-card designs use Direct2D vector artwork. Saiki K uses traced
+outlines of the official Japanese title logo (black lettering, red wide Ψ,
+white keyline), preserving its 552:195 aspect ratio without font substitution.
+Yu-Gi-Oh! uses eight cumulative copper/amber contour layers around the original
+black oval vortex, covering the entire card rather than a small spiral badge.
+Both apply to desktop faces and create-card backs. They bypass accent tinting
+and the generic double-gold border; custom image paths still take precedence.
+Desktop faces reserve readable number/name fields and omit the unrelated suits.
+
+The generated contour arrays are embedded in the single `.wh.cpp`, so there
+are no runtime image downloads, fonts or extra assets to install. Geometry is
+cached against the Direct2D factory, survives render-target loss and is released
+in `ReleaseGraphics()`. `tools/trace-card-art.py` regenerates only the marked data
+section from the references linked in that section; its OpenCV/numpy dependencies
+are development-only. All card-art rights remain with the original creators.
+
+`tools/preview-card-themes.ps1` extracts and compiles the production art helpers
+into an offscreen Direct2D/WIC renderer. `docs/theme-previews.png` shows size,
+tucked and rotated/high-DPI checks. This tests the artwork, not Explorer input,
+live window thumbnails or the whole Task View overlay.
+
 `ResolveTheme()` also rebuilds `g_themeChipColors`, a six-entry set derived from
 the accent (accent, lighter, darker, danger-tinted, text-tinted and a pale
 highlight). `ChipColorForIndex()` resolves the shared **Chip colors** setting for
@@ -375,8 +396,10 @@ spades, hearts, diamonds and clubs. `Cards.Animations` adds two ghost
 cards drawn by `DrawCardAnimation()`: creating a desktop pulls a card from the
 create deck to the slot where the new tab will appear and only then sends
 Win+Ctrl+D, while closing one tosses the card up and off the right edge. The
-ghost stores its own rank, suit and name so it can outlive the desktop it
-represents. The draw target is computed before creation from the current layout
+ghost stores its own rank, suit, name and card theme so it can outlive the desktop
+it represents without reverting to the default ivory face. The animation renderer
+uses the same built-in vector artwork (or loaded custom face artwork) as the
+stationary card. The draw target is computed before creation from the current layout
 (just left of the create card in the flat row, centred in the carousel), so no
 real tab needs to be hidden. A throw hides the closing tab until the ghost
 leaves. Both animations use `AnimationSeconds()`, so
