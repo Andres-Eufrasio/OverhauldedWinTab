@@ -32,7 +32,7 @@ closes the overview.
 - **Desktop strip**: flat or carousel layout with pill, chip or playing-card
   tabs, optional tucked cards, and create/close animations.
 - **Card art**: built-in vector themes (Yu-Gi-Oh!, Pokémon, Kakegurui and Saiki
-  K) or custom 2:3 portrait PNG/JPG faces. Use artwork you have permission to
+  K) or custom 2:3 portrait PNG/JPG faces.
   use.
 - **Held windows**: keep windows with you across desktops, in the grid or in a
   left/right dock.
