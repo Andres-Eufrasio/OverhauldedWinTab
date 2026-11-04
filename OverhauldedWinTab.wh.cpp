@@ -603,6 +603,17 @@ static POINT g_lastPointerPosition = {};
 static bool g_createDragging = false;
 static POINT g_createDragStart = {};
 static float g_createPull = 0.0f;
+static int g_windowDragEntry = -1;
+static POINT g_windowDragStart = {};
+static POINT g_windowDragCursor = {};
+static ULONGLONG g_windowDragStarted = 0;
+static bool g_windowDragging = false;
+static int g_windowDragTargetDesktop = -1;
+static bool g_windowDropAnimating = false;
+static HWND g_windowDropWindow = nullptr;
+static int g_windowDropTargetDesktop = -1;
+static ULONGLONG g_windowDropStarted = 0;
+static float g_windowDropDuration = 0.34f;
 
 // Inline virtual desktop rename.
 static int g_renameDesktop = -1;
@@ -721,6 +732,7 @@ struct CardView
     float lift = 0.0f;
     RectF rect, hit, header, preview, close;
 };
+static CardView g_windowDropCard;
 
 struct PillView
 {
@@ -806,6 +818,7 @@ static void RebuildWindowList();
 static void RefreshDesktops();
 static void MoveSelectedWindowToDesktop(int delta);
 static void MoveSelectedWindowToDesktopIndex(int index);
+static bool MoveWindowEntryToDesktopIndex(HWND window, int index);
 static void ToggleHold();
 static void StartHeldWatch();
 static void StopHeldWatch();
@@ -816,6 +829,8 @@ static void CommitRenameDesktop();
 static void CancelRenameDesktop();
 static void KickCarousel();
 static void ResetCarouselPosition(int desktop, int count);
+static void ClearWindowDrag();
+static void ClearWindowDropAnimation();
 static float BackgroundScrimAlpha();
 static bool DockExists();
 static void ClearCardAnimation();
@@ -2246,6 +2261,35 @@ static void StopHeldWatch()
 
 // Moves the selected window to the given virtual desktop using the documented
 // IVirtualDesktopManager API.
+static bool MoveWindowEntryToDesktopIndex(HWND window, int index)
+{
+    if (!window || !IsWindow(window) || g_desktops.empty() ||
+        index < 0 || index >= static_cast<int>(g_desktops.size()))
+        return false;
+
+    if (g_vdm)
+    {
+        GUID current = {};
+        if (SUCCEEDED(g_vdm->GetWindowDesktopId(window, &current)) &&
+            IsEqualGUID(current, g_desktops[index].id))
+            return false;
+    }
+
+    ReleaseThumbnails();
+    bool moved = MoveWindowToDesktopInternal(window, g_desktops[index].id);
+    if (!moved && g_vdm)
+        moved = SUCCEEDED(g_vdm->MoveWindowToDesktop(window, g_desktops[index].id));
+    Wh_Log(L"Move window %p to desktop %d: %s", static_cast<void*>(window), index,
+           moved ? L"ok" : L"failed");
+    if (moved)
+    {
+        RebuildWindowList();
+        g_desktopSelected = g_currentDesktop;
+    }
+    InvalidateRect(g_overlay, nullptr, FALSE);
+    return moved;
+}
+
 static void MoveSelectedWindowToDesktopIndex(int index)
 {
     if (g_desktops.empty())
@@ -2261,29 +2305,7 @@ static void MoveSelectedWindowToDesktopIndex(int index)
     if (!window)
         return;
 
-    // With all-desktop search the selected window need not live on the active
-    // desktop, so compare against the window's own desktop rather than
-    // assuming the current desktop is already the target.
-    if (g_vdm)
-    {
-        GUID current = {};
-        if (SUCCEEDED(g_vdm->GetWindowDesktopId(window, &current)) &&
-            IsEqualGUID(current, g_desktops[index].id))
-            return;
-    }
-
-    ReleaseThumbnails();
-    bool moved = MoveWindowToDesktopInternal(window, g_desktops[index].id);
-    if (!moved && g_vdm)
-        moved = SUCCEEDED(g_vdm->MoveWindowToDesktop(window, g_desktops[index].id));
-    Wh_Log(L"Move window %p to desktop %d: %s", static_cast<void*>(window), index,
-           moved ? L"ok" : L"failed");
-    if (moved)
-    {
-        RebuildWindowList();
-        g_desktopSelected = g_currentDesktop;
-    }
-    InvalidateRect(g_overlay, nullptr, FALSE);
+    MoveWindowEntryToDesktopIndex(window, index);
 }
 
 // Moves the selected window (or the window that opened the overview) to an
@@ -6645,6 +6667,131 @@ static void UpdateChipHostRegion(const std::vector<RectF>& rects)
     g_chipRegionHash = hash;
 }
 
+static bool BuildDraggedCardView(float sceneScale, float cx, float cy,
+                                 CardView* result)
+{
+    if (!result || !g_windowDragging || g_windowDragEntry < 0)
+        return false;
+
+    CardView source;
+    bool found = false;
+    for (const CardView& card : g_cards)
+        if (card.entry == g_windowDragEntry)
+        {
+            source = card;
+            found = true;
+            break;
+        }
+    if (!found)
+        for (const CardView& card : g_dockCards)
+            if (card.entry == g_windowDragEntry)
+            {
+                source = card;
+                found = true;
+                break;
+            }
+    if (!found)
+        return false;
+
+    CardView ghost = source;
+    ghost.rect = ScaleAbout(source.rect, sceneScale, cx, cy);
+    ghost.header = ScaleAbout(source.header, sceneScale, cx, cy);
+    ghost.preview = ScaleAbout(source.preview, sceneScale, cx, cy);
+    ghost.close = ScaleAbout(source.close, sceneScale, cx, cy);
+    ghost.lift = source.lift * sceneScale;
+
+    const float sourceCx = (ghost.rect.l + ghost.rect.r) / 2.0f;
+    const float sourceCy = (ghost.rect.t + ghost.rect.b) / 2.0f;
+    const float dx = static_cast<float>(g_windowDragCursor.x) - sourceCx;
+    const float dy = static_cast<float>(g_windowDragCursor.y) - sourceCy;
+    for (RectF* rect : {&ghost.rect, &ghost.header, &ghost.preview,
+                        &ghost.close})
+    {
+        rect->l += dx;
+        rect->r += dx;
+        rect->t += dy;
+        rect->b += dy;
+    }
+
+    const float elapsed = static_cast<float>(
+        GetTickCount64() - g_windowDragStarted) / 1000.0f;
+    const float dragLift =
+        (1.0f - EaseOutCubic(std::min(1.0f, elapsed / 0.14f))) *
+        14.0f * g_scale;
+    for (RectF* rect : {&ghost.rect, &ghost.header, &ghost.preview,
+                        &ghost.close})
+    {
+        rect->t -= dragLift;
+        rect->b -= dragLift;
+    }
+    ghost.lift += dragLift;
+
+    // The live thumbnail host is above the overlay. Keep the dragged card above
+    // the desktop strip while a tab is being targeted so the strip remains
+    // visible and the drop destination is never covered by the preview.
+    if (ghost.rect.b > g_layout.strip.t - 8.0f * g_scale)
+    {
+        const float dy = g_layout.strip.t - 8.0f * g_scale - ghost.rect.b;
+        for (RectF* rect : {&ghost.rect, &ghost.header, &ghost.preview,
+                            &ghost.close})
+        {
+            rect->t += dy;
+            rect->b += dy;
+        }
+    }
+    *result = ghost;
+    return true;
+}
+
+static bool BuildWindowDropCardView(float sceneScale, float cx, float cy,
+                                    CardView* result, float* progress)
+{
+    if (!result || !g_windowDropAnimating || g_windowDropTargetDesktop < 0)
+        return false;
+
+    int targetIndex = -1;
+    for (int i = 0; i < static_cast<int>(g_pills.size()); i++)
+        if (g_pills[i].desktop == g_windowDropTargetDesktop)
+        {
+            targetIndex = i;
+            break;
+        }
+    if (targetIndex < 0)
+        return false;
+
+    CardView ghost = g_windowDropCard;
+    ghost.rect = ScaleAbout(ghost.rect, sceneScale, cx, cy);
+    ghost.header = ScaleAbout(ghost.header, sceneScale, cx, cy);
+    ghost.preview = ScaleAbout(ghost.preview, sceneScale, cx, cy);
+    ghost.close = ScaleAbout(ghost.close, sceneScale, cx, cy);
+    ghost.lift *= sceneScale;
+
+    const float raw = static_cast<float>(GetTickCount64() - g_windowDropStarted) /
+                      1000.0f;
+    const float p = std::max(0.0f, std::min(1.0f, raw / g_windowDropDuration));
+    if (progress)
+        *progress = p;
+    const float eased = p * p;
+    const float sourceCx = (ghost.rect.l + ghost.rect.r) / 2.0f;
+    const float sourceCy = (ghost.rect.t + ghost.rect.b) / 2.0f;
+    const PillView& target = g_pills[targetIndex];
+    const float targetCx = (target.rect.l + target.rect.r) / 2.0f;
+    const float targetCy = (target.rect.t + target.rect.b) / 2.0f - target.lift;
+    const float scale = 1.0f - 0.78f * eased;
+    const float centreX = sourceCx + (targetCx - sourceCx) * eased;
+    const float centreY = sourceCy + (targetCy - sourceCy) * eased;
+    for (RectF* rect : {&ghost.rect, &ghost.header, &ghost.preview,
+                        &ghost.close})
+    {
+        rect->l = centreX + (rect->l - sourceCx) * scale;
+        rect->r = centreX + (rect->r - sourceCx) * scale;
+        rect->t = centreY + (rect->t - sourceCy) * scale;
+        rect->b = centreY + (rect->b - sourceCy) * scale;
+    }
+    *result = ghost;
+    return true;
+}
+
 static bool RenderChipMask(float sceneScale, float cx, float cy)
 {
     if (!g_chipMask || !EnsureChipMaskSurface())
@@ -6679,23 +6826,43 @@ static bool RenderChipMask(float sceneScale, float cx, float cy)
         view.lift = card.lift * sceneScale;
         return view;
     };
+    const bool maskLivePreviews = true;
 
     for (int i = 0; i < static_cast<int>(g_cards.size()); i++)
     {
+        if ((g_windowDragging && g_cards[i].entry == g_windowDragEntry) ||
+            (g_windowDropAnimating &&
+             g_cards[i].entry == g_windowDropCard.entry))
+            continue;
         const CardView view = scaledCard(g_cards[i]);
-        const bool isSelected = !g_focusStrip && !g_focusDock &&
-                                !g_pointerWindowSelection &&
-                                g_cards[i].filtered == g_selected;
-        DrawWindowChip(view, isSelected, g_hoverCard == i, g_hoverClose == i,
-                       true);
+        const bool isHovered = g_hoverCard == i;
+        const bool isSelected = isHovered ||
+                                (!g_focusStrip && !g_focusDock &&
+                                 !g_pointerWindowSelection &&
+                                 g_cards[i].filtered == g_selected);
+        DrawWindowChip(view, isSelected, isHovered, g_hoverClose == i,
+                       maskLivePreviews);
     }
     for (int i = 0; i < static_cast<int>(g_dockCards.size()); i++)
     {
+        if ((g_windowDragging && g_dockCards[i].entry == g_windowDragEntry) ||
+            (g_windowDropAnimating &&
+             g_dockCards[i].entry == g_windowDropCard.entry))
+            continue;
         const CardView view = scaledCard(g_dockCards[i]);
-        const bool isSelected = g_focusDock && i == g_dockSelected;
-        DrawWindowChip(view, isSelected, g_hoverDock == i,
-                       g_hoverDockClose == i, true);
+        const bool isHovered = g_hoverDock == i;
+        const bool isSelected = isHovered || (g_focusDock && i == g_dockSelected);
+        DrawWindowChip(view, isSelected, isHovered,
+                       g_hoverDockClose == i, maskLivePreviews);
     }
+    CardView dragged;
+    if (BuildDraggedCardView(sceneScale, cx, cy, &dragged))
+        DrawWindowChip(dragged, true, true, false, true);
+    CardView dropping;
+    float dropProgress = 0.0f;
+    if (BuildWindowDropCardView(sceneScale, cx, cy, &dropping, &dropProgress) &&
+        dropProgress < 0.45f)
+        DrawWindowChip(dropping, true, false, false, true);
 
     g_d2dTarget->PopAxisAlignedClip();
     if (g_d2dTarget->EndDraw() == static_cast<HRESULT>(0x8899000C))
@@ -6713,6 +6880,64 @@ static bool RenderChipMask(float sceneScale, float cx, float cy)
     POINT destination = {g_monitorX, g_monitorY};
     return UpdateLayeredWindow(g_chipMask, nullptr, &destination, &size,
                                g_maskDC, &source, 0, &blend, ULW_ALPHA) != FALSE;
+}
+
+static void RenderDragBorderOverlay(float sceneScale, float cx, float cy)
+{
+    // Window thumbnails are composed above the normal overlay. Reuse the
+    // transparent topmost mask window for square-card borders so another live
+    // thumbnail cannot paint over the dragged card's outline.
+    if (UsesWindowChips())
+        return;
+    if (!g_windowDragging && !g_windowDropAnimating)
+    {
+        if (g_chipMask)
+            ShowWindow(g_chipMask, SW_HIDE);
+        return;
+    }
+    if (!g_chipMask || !EnsureChipMaskSurface() || !EnsureFactories() ||
+        !EnsureDeviceResources())
+        return;
+
+    RECT rc = {0, 0, g_maskW, g_maskH};
+    if (FAILED(g_d2dTarget->BindDC(g_maskDC, &rc)))
+        return;
+    g_d2dTarget->BeginDraw();
+    g_d2dTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
+    g_d2dTarget->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+    g_d2dTarget->PushAxisAlignedClip(
+        D2D1::RectF(0.0f, 0.0f, static_cast<float>(g_maskW),
+                    static_cast<float>(g_maskH)),
+        D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+    CardView card;
+    float dropProgress = 0.0f;
+    const bool hasCard = BuildDraggedCardView(sceneScale, cx, cy, &card) ||
+        (BuildWindowDropCardView(sceneScale, cx, cy, &card, &dropProgress) &&
+         dropProgress < 0.28f);
+    if (hasCard)
+    {
+        StrokeRound(card.rect, 10.0f * g_scale, g_theme.accent,
+                    3.0f * g_scale, 0.98f);
+        StrokeRound(card.preview, 6.0f * g_scale, g_theme.accent,
+                    1.6f * g_scale, 0.78f);
+    }
+
+    g_d2dTarget->PopAxisAlignedClip();
+    g_d2dTarget->EndDraw();
+
+    BLENDFUNCTION blend = {};
+    blend.BlendOp = AC_SRC_OVER;
+    blend.SourceConstantAlpha = 255;
+    blend.AlphaFormat = AC_SRC_ALPHA;
+    POINT source = {0, 0};
+    SIZE size = {g_maskW, g_maskH};
+    POINT destination = {g_monitorX, g_monitorY};
+    UpdateLayeredWindow(g_chipMask, nullptr, &destination, &size, g_maskDC,
+                        &source, 0, &blend, ULW_ALPHA);
+    SetWindowPos(g_chipMask, HWND_TOPMOST, g_monitorX, g_monitorY, g_monitorW,
+                 g_monitorH, SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6745,6 +6970,13 @@ static void RenderScene(HDC dc)
     const float cx = g_layout.w / 2.0f;
     const float cy = g_layout.h / 2.0f;
     const float contentAlpha = eased;
+    CardView draggedCard;
+    const bool hasDraggedCard = BuildDraggedCardView(sceneScale, cx, cy,
+                                                     &draggedCard);
+    CardView droppingCard;
+    float dropProgress = 0.0f;
+    const bool hasDroppingCard = BuildWindowDropCardView(
+        sceneScale, cx, cy, &droppingCard, &dropProgress);
 
     // DWM thumbnails are composed above the window, so they are not part of the
     // D2D scene: their rectangles are animated manually to match the cards.
@@ -6761,6 +6993,10 @@ static void RenderScene(HDC dc)
                                  std::vector<RectF>& rects, bool inset) {
             for (const CardView& card : cards)
             {
+                if ((g_windowDragging && card.entry == g_windowDragEntry) ||
+                    (g_windowDropAnimating &&
+                     card.entry == g_windowDropCard.entry))
+                    continue;
                 if (card.entry < 0 ||
                     card.entry >= static_cast<int>(g_windows.size()))
                     continue;
@@ -6793,6 +7029,26 @@ static void RenderScene(HDC dc)
         {
             addThumbnails(g_cards, chipSources, chipRects, false);
             addThumbnails(g_dockCards, chipSources, chipRects, false);
+        }
+        if (UsesWindowChips() && hasDraggedCard &&
+            g_windowDragEntry < static_cast<int>(g_windows.size()) &&
+            g_windows[g_windowDragEntry].onCurrentDesktop &&
+            g_windows[g_windowDragEntry].hwnd &&
+            IsWindow(g_windows[g_windowDragEntry].hwnd))
+        {
+            std::vector<HWND>& sources = UsesWindowChips() ? chipSources : overlaySources;
+            std::vector<RectF>& rects = UsesWindowChips() ? chipRects : overlayRects;
+            sources.push_back(g_windows[g_windowDragEntry].hwnd);
+            rects.push_back(draggedCard.preview);
+        }
+        if (UsesWindowChips() && hasDroppingCard && dropProgress < 0.28f &&
+            g_windowDropWindow &&
+            IsWindow(g_windowDropWindow))
+        {
+            std::vector<HWND>& sources = UsesWindowChips() ? chipSources : overlaySources;
+            std::vector<RectF>& rects = UsesWindowChips() ? chipRects : overlayRects;
+            sources.push_back(g_windowDropWindow);
+            rects.push_back(droppingCard.preview);
         }
     }
     SyncThumbnails(overlaySources, overlayRects, contentAlpha);
@@ -6936,11 +7192,16 @@ static void RenderScene(HDC dc)
     // Window grid.
     for (int i = 0; i < static_cast<int>(g_cards.size()); i++)
     {
+        if ((g_windowDragging && g_cards[i].entry == g_windowDragEntry) ||
+            (g_windowDropAnimating &&
+             g_cards[i].entry == g_windowDropCard.entry))
+            continue;
         const CardView view = scaledCard(g_cards[i]);
-        const bool isSelected = !g_focusStrip && !g_focusDock &&
-                                !g_pointerWindowSelection &&
-                                g_cards[i].filtered == g_selected;
         const bool isHovered = g_hoverCard == i;
+        const bool isSelected = isHovered ||
+                                (!g_focusStrip && !g_focusDock &&
+                                 !g_pointerWindowSelection &&
+                                 g_cards[i].filtered == g_selected);
         const bool closeHovered = g_hoverClose == i;
         if (UsesWindowChips())
             DrawWindowChip(view, isSelected, isHovered, closeHovered);
@@ -6967,15 +7228,37 @@ static void RenderScene(HDC dc)
 
         for (int i = 0; i < static_cast<int>(g_dockCards.size()); i++)
         {
+            if ((g_windowDragging && g_dockCards[i].entry == g_windowDragEntry) ||
+                (g_windowDropAnimating &&
+                 g_dockCards[i].entry == g_windowDropCard.entry))
+                continue;
             const CardView view = scaledCard(g_dockCards[i]);
-            const bool isSelected = g_focusDock && i == g_dockSelected;
             const bool isHovered = g_hoverDock == i;
+            const bool isSelected = isHovered || (g_focusDock && i == g_dockSelected);
             const bool closeHovered = g_hoverDockClose == i;
             if (UsesWindowChips())
                 DrawWindowChip(view, isSelected, isHovered, closeHovered);
             else
                 DrawWindowCard(view, isSelected, isHovered, closeHovered);
         }
+    }
+
+    // Lift the dragged card out of the grid and let it follow the pointer. The
+    // original thumbnail is omitted above, so this ghost remains readable over
+    // the live preview instead of leaving a second card behind.
+    if (hasDraggedCard)
+    {
+        if (UsesWindowChips())
+            DrawWindowChip(draggedCard, true, true, false);
+        else
+            DrawWindowCard(draggedCard, true, true, false);
+    }
+    if (hasDroppingCard)
+    {
+        if (UsesWindowChips())
+            DrawWindowChip(droppingCard, true, false, false);
+        else
+            DrawWindowCard(droppingCard, true, false, false);
     }
 
     // Empty state.
@@ -7028,7 +7311,10 @@ static void RenderScene(HDC dc)
             continue;
         const bool active = pill.desktop == g_currentDesktop;
         const bool hovered = g_hoverPill == i;
-        const bool selected = g_focusStrip && pill.desktop == g_desktopSelected;
+        const bool dropTarget = g_windowDragging &&
+                                pill.desktop == g_windowDragTargetDesktop;
+        const bool selected = (g_focusStrip && pill.desktop == g_desktopSelected) ||
+                              dropTarget;
 
         if (IsWheel())
         {
@@ -7268,6 +7554,8 @@ static void RenderScene(HDC dc)
         UsesWindowChips() && g_windowChipContent == WindowChipContent::Preview &&
         (!g_busy || g_keepThumbnailsWhileBusy) &&
         contentAlpha > 0.98f && !chipSources.empty();
+    const bool showSquareDragLayer = !UsesWindowChips() && contentAlpha > 0.98f &&
+        (hasDraggedCard || (hasDroppingCard && dropProgress < 0.28f));
     if (showChipLayers)
     {
         SetChipLayersVisible(true);
@@ -7291,10 +7579,38 @@ static void RenderScene(HDC dc)
             SetChipLayersVisible(false);
         }
     }
+    else if (showSquareDragLayer)
+    {
+        const HWND source = hasDraggedCard
+            ? (g_windowDragEntry >= 0 &&
+               g_windowDragEntry < static_cast<int>(g_windows.size())
+                   ? g_windows[g_windowDragEntry].hwnd : nullptr)
+            : g_windowDropWindow;
+        const RectF& preview = hasDraggedCard ? draggedCard.preview
+                                               : droppingCard.preview;
+        if (source && IsWindow(source))
+        {
+            const std::vector<HWND> sources = {source};
+            const std::vector<RectF> rects = {preview};
+            SetChipLayersVisible(true);
+            SyncChipThumbnails(sources, rects, contentAlpha);
+            UpdateChipHostRegion(rects);
+            // The dedicated host is above the regular overlay thumbnails; the
+            // mask is raised again below with the drag border over its preview.
+            SetWindowPos(g_thumbHost, g_chipMask, g_monitorX, g_monitorY,
+                         g_monitorW, g_monitorH,
+                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        }
+        else
+        {
+            SetChipLayersVisible(false);
+        }
+    }
     else
     {
         SetChipLayersVisible(false);
     }
+    RenderDragBorderOverlay(sceneScale, cx, cy);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -7587,6 +7903,8 @@ static void ShowOverlay()
         g_returnKeyLatch = false;
     g_createDragging = false;
     g_createPull = 0.0f;
+    ClearWindowDrag();
+    ClearWindowDropAnimation();
     g_busy = false;
     g_busySince = 0;
     g_desktopActionCreate = false;
@@ -7704,6 +8022,13 @@ static void HideOverlay(bool immediate)
         if (GetCapture() == g_overlay)
             ReleaseCapture();
     }
+    if (g_windowDragEntry >= 0)
+    {
+        ClearWindowDrag();
+        if (GetCapture() == g_overlay)
+            ReleaseCapture();
+    }
+    ClearWindowDropAnimation();
 
     if (immediate)
     {
@@ -8030,6 +8355,87 @@ static void UpdateHover(int x, int y)
 
     if (Contains(g_createRect, static_cast<float>(x), static_cast<float>(y)))
         g_hoverCreate = true;
+}
+
+static void ClearWindowDrag()
+{
+    g_windowDragEntry = -1;
+    g_windowDragStarted = 0;
+    g_windowDragging = false;
+    g_windowDragTargetDesktop = -1;
+}
+
+static void ClearWindowDropAnimation()
+{
+    g_windowDropAnimating = false;
+    g_windowDropWindow = nullptr;
+    g_windowDropTargetDesktop = -1;
+    g_windowDropCard = CardView();
+    g_windowDropStarted = 0;
+}
+
+static bool BeginWindowDropAnimation(int entry, int targetDesktop)
+{
+    if (entry < 0 || entry >= static_cast<int>(g_windows.size()) ||
+        targetDesktop < 0 || targetDesktop >= static_cast<int>(g_desktops.size()))
+        return false;
+
+    CardView source;
+    bool found = false;
+    for (const CardView& card : g_cards)
+        if (card.entry == entry)
+        {
+            source = card;
+            found = true;
+            break;
+        }
+    if (!found)
+        for (const CardView& card : g_dockCards)
+            if (card.entry == entry)
+            {
+                source = card;
+                found = true;
+                break;
+            }
+    if (!found || !g_windows[entry].hwnd || !IsWindow(g_windows[entry].hwnd))
+        return false;
+
+    g_windowDropCard = source;
+    g_windowDropWindow = g_windows[entry].hwnd;
+    g_windowDropTargetDesktop = targetDesktop;
+    g_windowDropStarted = GetTickCount64();
+    g_windowDropAnimating = true;
+    g_lastFrameTick = g_windowDropStarted;
+    SetTimer(g_overlay, kTimerFrame, 16, nullptr);
+    InvalidateRect(g_overlay, nullptr, FALSE);
+    return true;
+}
+
+static int WindowEntryAt(int x, int y)
+{
+    const float fx = static_cast<float>(x);
+    const float fy = static_cast<float>(y);
+    for (const CardView& card : g_cards)
+    {
+        if ((Contains(card.hit, fx, fy) || Contains(card.rect, fx, fy)) &&
+            card.entry >= 0 && card.entry < static_cast<int>(g_windows.size()))
+            return card.entry;
+    }
+    for (const CardView& card : g_dockCards)
+    {
+        if ((Contains(card.hit, fx, fy) || Contains(card.rect, fx, fy)) &&
+            card.entry >= 0 && card.entry < static_cast<int>(g_windows.size()))
+            return card.entry;
+    }
+    return -1;
+}
+
+static void UpdateWindowDragTarget(int x, int y)
+{
+    g_windowDragTargetDesktop = -1;
+    const int pillIndex = PillAt(static_cast<float>(x), static_cast<float>(y));
+    if (pillIndex >= 0 && pillIndex < static_cast<int>(g_pills.size()))
+        g_windowDragTargetDesktop = g_pills[pillIndex].desktop;
 }
 
 static void OnLeftClick(int x, int y)
@@ -8669,6 +9075,12 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             SetCapture(hwnd);
             return 0;
         }
+        g_windowDragEntry = WindowEntryAt(x, y);
+        g_windowDragStart = {x, y};
+        g_windowDragging = false;
+        g_windowDragTargetDesktop = -1;
+        if (g_windowDragEntry >= 0)
+            SetCapture(hwnd);
         return 0;
     }
 
@@ -8694,6 +9106,28 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             return 0;
         }
 
+        if (g_windowDragEntry >= 0)
+        {
+            const int dx = x - g_windowDragStart.x;
+            const int dy = y - g_windowDragStart.y;
+            const int threshold = std::max(4, static_cast<int>(6.0f * g_scale));
+            if (!g_windowDragging && dx * dx + dy * dy >= threshold * threshold)
+            {
+                g_windowDragging = true;
+                g_windowDragStarted = GetTickCount64();
+                g_lastFrameTick = g_windowDragStarted;
+                SetTimer(hwnd, kTimerFrame, 16, nullptr);
+            }
+            g_windowDragCursor = {x, y};
+            if (g_windowDragging)
+            {
+                UpdateHover(x, y);
+                UpdateWindowDragTarget(x, y);
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+        }
+
         UpdateHover(x, y);
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
@@ -8714,6 +9148,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
     case WM_CAPTURECHANGED:
         g_createDragging = false;
         g_createPull = 0.0f;
+        ClearWindowDrag();
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
 
@@ -8723,6 +9158,30 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             return 0;
         const int x = GET_X_LPARAM(lParam);
         const int y = GET_Y_LPARAM(lParam);
+        if (g_windowDragEntry >= 0)
+        {
+            const int entry = g_windowDragEntry;
+            const bool dragged = g_windowDragging;
+            const int targetDesktop = g_windowDragTargetDesktop;
+            bool dropStarted = false;
+            if (dragged && targetDesktop >= 0)
+                dropStarted = BeginWindowDropAnimation(entry, targetDesktop);
+            ClearWindowDrag();
+            if (GetCapture() == hwnd)
+                ReleaseCapture();
+            if (dragged)
+            {
+                if (!dropStarted && targetDesktop >= 0 &&
+                    entry < static_cast<int>(g_windows.size()))
+                    MoveWindowEntryToDesktopIndex(g_windows[entry].hwnd,
+                                                  targetDesktop);
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+            UpdateHover(x, y);
+            OnLeftClick(x, y);
+            return 0;
+        }
         if (g_createDragging)
         {
             const bool pulled = g_createPull >= 0.45f;
@@ -8847,6 +9306,12 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             const int pillIndex = PillAt(fx, fy);
             if (pillIndex >= 0 && g_pills[pillIndex].desktop == g_renameDesktop)
                 overText = true;
+        }
+
+        if (g_windowDragging)
+        {
+            SetCursor(LoadCursorW(nullptr, IDC_SIZEALL));
+            return TRUE;
         }
 
         const bool interactive = g_hoverCard >= 0 || g_hoverPill >= 0 ||
@@ -9053,7 +9518,20 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 ClearCardAnimation();
             }
 
+            if (g_windowDropAnimating &&
+                now - g_windowDropStarted >=
+                    static_cast<ULONGLONG>(g_windowDropDuration * 1000.0f))
+            {
+                HWND window = g_windowDropWindow;
+                const int target = g_windowDropTargetDesktop;
+                ClearWindowDropAnimation();
+                if (window && target >= 0)
+                    MoveWindowEntryToDesktopIndex(window, target);
+            }
+
             if (g_presence >= 1.0f && !g_busy && !g_createAfterDraw &&
+                !g_windowDragging &&
+                !g_windowDropAnimating &&
                 g_cardAnim.mode == CardAnimationMode::None)
                 KillTimer(hwnd, kTimerFrame);
 
