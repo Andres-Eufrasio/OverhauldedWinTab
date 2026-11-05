@@ -617,7 +617,49 @@ static bool g_windowDropAnimating = false;
 static HWND g_windowDropWindow = nullptr;
 static int g_windowDropTargetDesktop = -1;
 static ULONGLONG g_windowDropStarted = 0;
-static float g_windowDropDuration = 0.34f;
+static float g_windowDropDuration = 0.42f;
+// Landing feedback on the destination desktop tab.
+static int g_dropPulseDesktop = -1;
+static ULONGLONG g_dropPulseStarted = 0;
+static const float kDropPulseSeconds = 0.38f;
+// Live thumbnails (and the chip mask hole) disappear at this progress. Every
+// place that cares must use this one constant or the hole/thumbnail desync.
+static const float kDropThumbEnd = 0.5f;
+
+// Accelerates into the tab with zero overshoot (f(0)=0, f(1)=1).
+static float DropTimeCurve(float p) { return p * p * (2.0f - p); }
+
+// Square-card thumbnails fade between 0.2 and kDropThumbEnd.
+static float DropThumbOpacity(float p)
+{
+    if (p >= kDropThumbEnd) return 0.0f;
+    if (p <= 0.2f) return 1.0f;
+    return 1.0f - (p - 0.2f) / (kDropThumbEnd - 0.2f);
+}
+
+// The painted ghost fades over the second half of the flight.
+static float DropGhostOpacity(float p)
+{
+    if (p <= kDropThumbEnd) return 1.0f;
+    const float t = (p - kDropThumbEnd) / (1.0f - kDropThumbEnd);
+    return std::max(0.0f, 1.0f - t * t);
+}
+
+static bool DropPulseActive()
+{
+    return g_dropPulseDesktop >= 0 &&
+           static_cast<float>(GetTickCount64() - g_dropPulseStarted) / 1000.0f <
+               kDropPulseSeconds;
+}
+
+static float DropPulseScale(int desktop)
+{
+    if (desktop < 0 || desktop != g_dropPulseDesktop || !DropPulseActive())
+        return 1.0f;
+    const float q = static_cast<float>(GetTickCount64() - g_dropPulseStarted) /
+                    1000.0f / kDropPulseSeconds;
+    return 1.0f + 0.12f * std::sin(q * 3.14159265f) * (1.0f - q);
+}
 
 // Inline virtual desktop rename.
 static int g_renameDesktop = -1;
@@ -6775,15 +6817,25 @@ static bool BuildWindowDropCardView(float sceneScale, float cx, float cy,
     const float p = std::max(0.0f, std::min(1.0f, raw / g_windowDropDuration));
     if (progress)
         *progress = p;
-    const float eased = p * p;
+    const float eased = DropTimeCurve(p);
     const float sourceCx = (ghost.rect.l + ghost.rect.r) / 2.0f;
     const float sourceCy = (ghost.rect.t + ghost.rect.b) / 2.0f;
     const PillView& target = g_pills[targetIndex];
     const float targetCx = (target.rect.l + target.rect.r) / 2.0f;
     const float targetCy = (target.rect.t + target.rect.b) / 2.0f - target.lift;
-    const float scale = 1.0f - 0.78f * eased;
-    const float centreX = sourceCx + (targetCx - sourceCx) * eased;
-    const float centreY = sourceCy + (targetCy - sourceCy) * eased;
+
+    // Quadratic Bezier whose control point is raised above the straight line,
+    // so the card is tossed up a little before it dives into the tab.
+    const float dist = std::hypot(targetCx - sourceCx, targetCy - sourceCy);
+    const float bulge = -std::min(90.0f * g_scale, dist * 0.22f);
+    const float ctrlX = (sourceCx + targetCx) / 2.0f;
+    const float ctrlY = (sourceCy + targetCy) / 2.0f + bulge;
+    const float u = 1.0f - eased;
+    const float centreX = u * u * sourceCx + 2.0f * u * eased * ctrlX +
+                          eased * eased * targetCx;
+    const float centreY = u * u * sourceCy + 2.0f * u * eased * ctrlY +
+                          eased * eased * targetCy;
+    const float scale = 1.0f - 0.82f * eased;
     for (RectF* rect : {&ghost.rect, &ghost.header, &ghost.preview,
                         &ghost.close})
     {
@@ -6843,11 +6895,11 @@ static bool RenderChipMask(float sceneScale, float cx, float cy)
     float dropProgress = 0.0f;
     const bool hasDropping =
         BuildWindowDropCardView(sceneScale, cx, cy, &dropping, &dropProgress) &&
-        dropProgress < 0.45f;
+        dropProgress < kDropThumbEnd;
 
     ID2D1Geometry* outsideMovingPreviews = nullptr;
     bool pushedExcludeLayer = false;
-    if (hasDragged || (hasDropping && dropProgress < 0.28f))
+    if (hasDragged || hasDropping)
     {
         std::vector<ID2D1Geometry*> parts;
         ID2D1RectangleGeometry* whole = nullptr;
@@ -6866,7 +6918,7 @@ static bool RenderChipMask(float sceneScale, float cx, float cy)
         };
         if (hasDragged)
             addHole(dragged.preview);
-        if (hasDropping && dropProgress < 0.28f)
+        if (hasDropping)
             addHole(dropping.preview);
         if (parts.size() > 1)
         {
@@ -6977,7 +7029,7 @@ static void RenderDragBorderOverlay(float sceneScale, float cx, float cy)
     float dropProgress = 0.0f;
     const bool hasCard = BuildDraggedCardView(sceneScale, cx, cy, &card) ||
         (BuildWindowDropCardView(sceneScale, cx, cy, &card, &dropProgress) &&
-         dropProgress < 0.28f);
+         dropProgress < kDropThumbEnd);
     if (hasCard)
     {
         StrokeRound(card.rect, 10.0f * g_scale, g_theme.accent,
@@ -7103,7 +7155,7 @@ static void RenderScene(HDC dc)
             sources.push_back(g_windows[g_windowDragEntry].hwnd);
             rects.push_back(draggedCard.preview);
         }
-        if (UsesWindowChips() && hasDroppingCard && dropProgress < 0.28f &&
+        if (UsesWindowChips() && hasDroppingCard && dropProgress < kDropThumbEnd &&
             g_windowDropWindow &&
             IsWindow(g_windowDropWindow))
         {
@@ -7317,10 +7369,27 @@ static void RenderScene(HDC dc)
     }
     if (hasDroppingCard)
     {
+        const float fade = DropGhostOpacity(dropProgress);
+        ID2D1Layer* fadeLayer = nullptr;
+        if (fade < 0.999f &&
+            SUCCEEDED(g_d2dTarget->CreateLayer(nullptr, &fadeLayer)) && fadeLayer)
+        {
+            g_d2dTarget->PushLayer(
+                D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr,
+                                      D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                      D2D1::Matrix3x2F::Identity(), fade,
+                                      nullptr, D2D1_LAYER_OPTIONS_NONE),
+                fadeLayer);
+        }
         if (UsesWindowChips())
             DrawWindowChip(droppingCard, true, false, false);
         else
             DrawWindowCard(droppingCard, true, false, false);
+        if (fadeLayer)
+        {
+            g_d2dTarget->PopLayer();
+            fadeLayer->Release();
+        }
     }
 
     // Empty state.
@@ -7378,21 +7447,25 @@ static void RenderScene(HDC dc)
         const bool selected = (g_focusStrip && pill.desktop == g_desktopSelected) ||
                               dropTarget;
 
-        if (IsWheel())
+        const float pulse = DropPulseScale(pill.desktop);
+        const bool transformed = IsWheel() || pulse != 1.0f;
+        if (transformed)
         {
             const D2D1_POINT_2F centre =
                 D2D1::Point2F((pill.rect.l + pill.rect.r) / 2.0f,
                               (pill.rect.t + pill.rect.b) / 2.0f - pill.lift);
+            const float k = (IsWheel() ? pill.scale : 1.0f) * pulse;
+            const float a = IsWheel() ? pill.angle : 0.0f;
             g_d2dTarget->SetTransform(
-                D2D1::Matrix3x2F::Scale(pill.scale, pill.scale, centre) *
-                D2D1::Matrix3x2F::Rotation(pill.angle, centre));
+                D2D1::Matrix3x2F::Scale(k, k, centre) *
+                D2D1::Matrix3x2F::Rotation(a, centre));
         }
 
         if (UsesCards())
         {
             DrawDesktopCard(pill, active, hovered, selected,
                             g_hoverPillClose == i);
-            if (IsWheel())
+            if (transformed)
                 g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
             continue;
         }
@@ -7400,7 +7473,7 @@ static void RenderScene(HDC dc)
         if (UsesChips())
         {
             DrawChipTab(pill, active, hovered, selected, g_hoverPillClose == i);
-            if (IsWheel())
+            if (transformed)
                 g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
             continue;
         }
@@ -7484,7 +7557,7 @@ static void RenderScene(HDC dc)
                                   1.4f * s);
         }
 
-        if (IsWheel())
+        if (transformed)
             g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
     }
 
@@ -7617,7 +7690,7 @@ static void RenderScene(HDC dc)
         (!g_busy || g_keepThumbnailsWhileBusy) &&
         contentAlpha > 0.98f && !chipSources.empty();
     const bool showSquareDragLayer = !UsesWindowChips() && contentAlpha > 0.98f &&
-        (hasDraggedCard || (hasDroppingCard && dropProgress < 0.28f));
+        (hasDraggedCard || (hasDroppingCard && dropProgress < kDropThumbEnd));
     if (showChipLayers)
     {
         SetChipLayersVisible(true);
@@ -7655,7 +7728,9 @@ static void RenderScene(HDC dc)
             const std::vector<HWND> sources = {source};
             const std::vector<RectF> rects = {preview};
             SetChipLayersVisible(true);
-            SyncChipThumbnails(sources, rects, contentAlpha);
+            SyncChipThumbnails(sources, rects,
+                contentAlpha * (hasDraggedCard ? 1.0f
+                                               : DropThumbOpacity(dropProgress)));
             UpdateChipHostRegion(rects);
             // The dedicated host is above the regular overlay thumbnails; the
             // mask is raised again below with the drag border over its preview.
@@ -7967,6 +8042,7 @@ static void ShowOverlay()
     g_createPull = 0.0f;
     ClearWindowDrag();
     ClearWindowDropAnimation();
+    g_dropPulseDesktop = -1;
     g_busy = false;
     g_busySince = 0;
     g_desktopActionCreate = false;
@@ -8467,6 +8543,7 @@ static bool BeginWindowDropAnimation(int entry, int targetDesktop)
     g_windowDropCard = source;
     g_windowDropWindow = g_windows[entry].hwnd;
     g_windowDropTargetDesktop = targetDesktop;
+    g_windowDropDuration = AnimationSeconds(0.42f);
     g_windowDropStarted = GetTickCount64();
     g_windowDropAnimating = true;
     g_lastFrameTick = g_windowDropStarted;
@@ -9613,12 +9690,16 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 const int target = g_windowDropTargetDesktop;
                 ClearWindowDropAnimation();
                 if (window && target >= 0)
+                {
+                    g_dropPulseDesktop = target;
+                    g_dropPulseStarted = now;
                     MoveWindowEntryToDesktopIndex(window, target);
+                }
             }
 
             if (g_presence >= 1.0f && !g_busy && !g_createAfterDraw &&
                 !g_windowDragging &&
-                !g_windowDropAnimating &&
+                !g_windowDropAnimating && !DropPulseActive() &&
                 g_cardAnim.mode == CardAnimationMode::None)
                 KillTimer(hwnd, kTimerFrame);
 
