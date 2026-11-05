@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.9.0
+// @version         0.9.2
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -9182,7 +9182,9 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             const int dx = x - g_windowDragStart.x;
             const int dy = y - g_windowDragStart.y;
             const int threshold = std::max(4, static_cast<int>(6.0f * g_scale));
-            if (!g_windowDragging && dx * dx + dy * dy >= threshold * threshold)
+            // Held windows are pinned: they can be clicked but never dragged.
+            if (!g_windowDragging && !EntryIsHeld(g_windowDragEntry) &&
+                dx * dx + dy * dy >= threshold * threshold)
             {
                 g_windowDragging = true;
                 g_windowDragStarted = GetTickCount64();
