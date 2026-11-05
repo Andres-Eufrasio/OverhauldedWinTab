@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.9.0
+// @version         0.9.1
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -6828,6 +6828,64 @@ static bool RenderChipMask(float sceneScale, float cx, float cy)
     };
     const bool maskLivePreviews = true;
 
+    // Build the dragged / dropping chips up front. Their live thumbnails are the
+    // topmost thumbnails in the host, but this mask sits above the whole host,
+    // so any other chip's body or border drawn under them would paint over the
+    // moving window. The other chips are drawn inside a layer that excludes the
+    // moving previews so those areas stay transparent in the mask.
+    CardView dragged;
+    const bool hasDragged = BuildDraggedCardView(sceneScale, cx, cy, &dragged);
+    CardView dropping;
+    float dropProgress = 0.0f;
+    const bool hasDropping =
+        BuildWindowDropCardView(sceneScale, cx, cy, &dropping, &dropProgress) &&
+        dropProgress < 0.45f;
+
+    ID2D1Geometry* outsideMovingPreviews = nullptr;
+    bool pushedExcludeLayer = false;
+    if (hasDragged || (hasDropping && dropProgress < 0.28f))
+    {
+        std::vector<ID2D1Geometry*> parts;
+        ID2D1RectangleGeometry* whole = nullptr;
+        if (SUCCEEDED(g_d2dFactory->CreateRectangleGeometry(
+                D2D1::RectF(0.0f, 0.0f, static_cast<float>(g_maskW),
+                            static_cast<float>(g_maskH)), &whole)) && whole)
+            parts.push_back(whole);
+        auto addHole = [&](const RectF& preview) {
+            ID2D1EllipseGeometry* hole = nullptr;
+            const float r = preview.W() / 2.0f;
+            if (r > 0.0f && SUCCEEDED(g_d2dFactory->CreateEllipseGeometry(
+                    D2D1::Ellipse(D2D1::Point2F((preview.l + preview.r) / 2.0f,
+                                                (preview.t + preview.b) / 2.0f),
+                                  r, r), &hole)) && hole)
+                parts.push_back(hole);
+        };
+        if (hasDragged)
+            addHole(dragged.preview);
+        if (hasDropping && dropProgress < 0.28f)
+            addHole(dropping.preview);
+        if (parts.size() > 1)
+        {
+            // Alternate fill: the whole mask minus the moving preview circles.
+            ID2D1GeometryGroup* group = nullptr;
+            if (SUCCEEDED(g_d2dFactory->CreateGeometryGroup(
+                    D2D1_FILL_MODE_ALTERNATE, parts.data(),
+                    static_cast<UINT32>(parts.size()), &group)) && group)
+                outsideMovingPreviews = group;
+        }
+        for (ID2D1Geometry* part : parts)
+            part->Release();
+        if (outsideMovingPreviews)
+        {
+            g_d2dTarget->PushLayer(
+                D2D1::LayerParameters(D2D1::InfiniteRect(),
+                                      outsideMovingPreviews,
+                                      D2D1_ANTIALIAS_MODE_PER_PRIMITIVE),
+                nullptr);
+            pushedExcludeLayer = true;
+        }
+    }
+
     for (int i = 0; i < static_cast<int>(g_cards.size()); i++)
     {
         if ((g_windowDragging && g_cards[i].entry == g_windowDragEntry) ||
@@ -6855,13 +6913,13 @@ static bool RenderChipMask(float sceneScale, float cx, float cy)
         DrawWindowChip(view, isSelected, isHovered,
                        g_hoverDockClose == i, maskLivePreviews);
     }
-    CardView dragged;
-    if (BuildDraggedCardView(sceneScale, cx, cy, &dragged))
+    if (pushedExcludeLayer)
+        g_d2dTarget->PopLayer();
+    if (outsideMovingPreviews)
+        outsideMovingPreviews->Release();
+    if (hasDragged)
         DrawWindowChip(dragged, true, true, false, true);
-    CardView dropping;
-    float dropProgress = 0.0f;
-    if (BuildWindowDropCardView(sceneScale, cx, cy, &dropping, &dropProgress) &&
-        dropProgress < 0.45f)
+    if (hasDropping)
         DrawWindowChip(dropping, true, false, false, true);
 
     g_d2dTarget->PopAxisAlignedClip();
