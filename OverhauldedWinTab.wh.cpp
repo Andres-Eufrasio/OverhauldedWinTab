@@ -44,9 +44,8 @@ closes the overview.
 
 - **Window tabs**: square previews or poker chips showing a live preview, app
   icon or title, in four sizes and several color modes.
-- **Desktop strip**: flat or carousel layout with pill, chip, playing-card or
-  Windows-style desktop preview tabs (wallpaper plus each desktop's windows),
-  in three sizes, with optional tucked cards and create/close animations.
+- **Desktop strip**: flat or carousel layout with pill, chip or playing-card
+  tabs, optional tucked cards, and create/close animations.
 - **Card art**: built-in vector themes (Yu-Gi-Oh!, Pokémon, Kakegurui and Saiki
   K) or custom 2:3 portrait PNG/JPG faces.
 - **Held windows**: keep windows with you across desktops, in the grid or in a
