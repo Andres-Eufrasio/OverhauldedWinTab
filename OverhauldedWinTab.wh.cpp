@@ -2698,8 +2698,9 @@ static UINT32 ChipColorForIndex(int index)
                                           0xFFF0B429, 0xFF3A8D5D};
         static const UINT32 kakegurui[] = {0xFF171717, 0xFF8E1B2A,
                                             0xFFD4AF37, 0xFF5A0F1B};
-        static const UINT32 saikiK[] = {0xFFE60012, 0xFF221815,
-                                        0xFF5AC8A8, 0xFFEF6F9F};
+        static const UINT32 saikiK[] = {0xFF5AC8A8 , 0xFFF53D9C,
+                                        0xFFB7E1F9, 0xFF35339F,
+                                        0xFF6DDA62, 0xFF9066BD};
         const UINT32* colors = g_cardTheme == L"yugioh" ? yugioh
                              : g_cardTheme == L"pokemon" ? pokemon
                              : g_cardTheme == L"kakegurui" ? kakegurui : saikiK;
