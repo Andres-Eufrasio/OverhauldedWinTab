@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.9.1
+// @version         0.9.0
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -609,6 +609,10 @@ static POINT g_windowDragCursor = {};
 static ULONGLONG g_windowDragStarted = 0;
 static bool g_windowDragging = false;
 static int g_windowDragTargetDesktop = -1;
+// True while a dragged window hovers the create-desktop button. Releasing it
+// there creates a new desktop and moves the window onto it.
+static bool g_windowDragTargetCreate = false;
+static HWND g_pendingMoveToNewDesktop = nullptr;
 static bool g_windowDropAnimating = false;
 static HWND g_windowDropWindow = nullptr;
 static int g_windowDropTargetDesktop = -1;
@@ -7972,6 +7976,7 @@ static void ShowOverlay()
     g_pendingDesktopTarget = -1;
     g_pendingDesktopTries = 0;
     g_pendingActivateWindow = nullptr;
+    g_pendingMoveToNewDesktop = nullptr;
     g_pendingActivateDesktop = -1;
     g_keepThumbnailsWhileBusy = false;
     g_pendingMove = false;
@@ -8421,6 +8426,7 @@ static void ClearWindowDrag()
     g_windowDragStarted = 0;
     g_windowDragging = false;
     g_windowDragTargetDesktop = -1;
+    g_windowDragTargetCreate = false;
 }
 
 static void ClearWindowDropAnimation()
@@ -8491,9 +8497,15 @@ static int WindowEntryAt(int x, int y)
 static void UpdateWindowDragTarget(int x, int y)
 {
     g_windowDragTargetDesktop = -1;
+    g_windowDragTargetCreate = false;
     const int pillIndex = PillAt(static_cast<float>(x), static_cast<float>(y));
     if (pillIndex >= 0 && pillIndex < static_cast<int>(g_pills.size()))
         g_windowDragTargetDesktop = g_pills[pillIndex].desktop;
+    else if (Contains(g_createRect, static_cast<float>(x), static_cast<float>(y)))
+    {
+        g_windowDragTargetCreate = true;
+        g_hoverCreate = true;
+    }
 }
 
 static void OnLeftClick(int x, int y)
@@ -9137,6 +9149,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
         g_windowDragStart = {x, y};
         g_windowDragging = false;
         g_windowDragTargetDesktop = -1;
+        g_windowDragTargetCreate = false;
         if (g_windowDragEntry >= 0)
             SetCapture(hwnd);
         return 0;
@@ -9221,12 +9234,26 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             const int entry = g_windowDragEntry;
             const bool dragged = g_windowDragging;
             const int targetDesktop = g_windowDragTargetDesktop;
+            const bool targetCreate = g_windowDragTargetCreate;
             bool dropStarted = false;
             if (dragged && targetDesktop >= 0)
                 dropStarted = BeginWindowDropAnimation(entry, targetDesktop);
             ClearWindowDrag();
             if (GetCapture() == hwnd)
                 ReleaseCapture();
+            if (dragged && targetCreate && targetDesktop < 0 && !g_busy &&
+                entry >= 0 && entry < static_cast<int>(g_windows.size()) &&
+                g_windows[entry].hwnd && IsWindow(g_windows[entry].hwnd))
+            {
+                // Dropped on the create-desktop button: make a new desktop,
+                // then move this window onto it once the shell has created it.
+                g_pendingMoveToNewDesktop = g_windows[entry].hwnd;
+                BeginDesktopAction(-1, true, false);
+                if (!g_busy)
+                    g_pendingMoveToNewDesktop = nullptr;
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
             if (dragged)
             {
                 if (!dropStarted && targetDesktop >= 0 &&
@@ -9695,6 +9722,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
                 RefreshDesktops();
             KillTimer(hwnd, kTimerDesktop);
             const bool createdDesktop = g_desktopActionCreate;
+            const int createStartCount = g_desktopActionStartCount;
             g_busy = false;
             g_busySince = 0;
             g_desktopActionCreate = false;
@@ -9704,6 +9732,15 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
             g_pendingDesktopTarget = -1;
             g_pendingDesktopTries = 0;
             g_keepThumbnailsWhileBusy = false;
+
+            // A window dropped on the create-desktop button goes onto the
+            // desktop that was just created (always the last one).
+            HWND moveToNew = g_pendingMoveToNewDesktop;
+            g_pendingMoveToNewDesktop = nullptr;
+            if (createdDesktop && moveToNew && IsWindow(moveToNew) &&
+                static_cast<int>(g_desktops.size()) > createStartCount)
+                MoveWindowEntryToDesktopIndex(
+                    moveToNew, static_cast<int>(g_desktops.size()) - 1);
 
             // Carry held tasks right away instead of waiting for the watcher.
             GUID active = {};
