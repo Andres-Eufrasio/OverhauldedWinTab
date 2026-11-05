@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.9.2
+// @version         0.9.4
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -44,8 +44,9 @@ closes the overview.
 
 - **Window tabs**: square previews or poker chips showing a live preview, app
   icon or title, in four sizes and several color modes.
-- **Desktop strip**: flat or carousel layout with pill, chip or playing-card
-  tabs, optional tucked cards, and create/close animations.
+- **Desktop strip**: flat or carousel layout with pill, chip, playing-card or
+  Windows-style desktop preview tabs (wallpaper plus each desktop's windows),
+  optional tucked cards, and create/close animations.
 - **Card art**: built-in vector themes (Yu-Gi-Oh!, Pokémon, Kakegurui and Saiki
   K) or custom 2:3 portrait PNG/JPG faces.
 - **Held windows**: keep windows with you across desktops, in the grid or in a
@@ -184,9 +185,10 @@ MIT. See [LICENSE](LICENSE).
       - "carousel": Carousel
     - Tabs: "pill"
       $name: Desktop tabs
-      $description: Shape of the desktop tabs. Poker chips show the desktop number on a round chip with the name below; playing cards turn each desktop into a portrait card.
+      $description: Shape of the desktop tabs. Desktop previews show a thumbnail of each desktop (wallpaper plus its windows) with the name below, like the Windows Task View; poker chips show the desktop number on a round chip with the name below; playing cards turn each desktop into a portrait card.
       $options:
       - "pill": Pills
+      - "preview": Desktop previews (Windows style)
       - "chip": Poker chips
       - "cards": Playing cards
     - Background: "auto"
@@ -290,6 +292,7 @@ MIT. See [LICENSE](LICENSE).
 #include <cstdint>
 #include <cstring>
 #include <cwchar>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -453,7 +456,8 @@ enum class TabStyle
 {
     Pill,
     Chip,
-    Cards
+    Cards,
+    Preview
 };
 
 // Panel behind the desktop tabs.
@@ -707,6 +711,42 @@ struct DesktopInfo
 };
 
 static std::vector<WindowEntry> g_windows;
+
+// Miniature desktop previews (the "Desktop previews" tab style). Windows on
+// other virtual desktops are DWM-cloaked and cannot be captured live, so each
+// desktop is drawn as its wallpaper plus its windows at their real positions,
+// showing the last image taken of each window (or its app icon if none has
+// been taken yet).
+struct PreviewWindow
+{
+    HWND hwnd = nullptr;
+    int desktop = -1;  // -1: pinned to every desktop.
+    RectF rect;        // Relative to the overlay monitor, in pixels.
+    // The part of the window that is on this monitor, as fractions of its
+    // whole frame, so a snapshot can be cropped to match `rect`.
+    float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
+    ID2D1Bitmap* icon = nullptr;
+    float iconSize = 0.0f;
+};
+static std::vector<PreviewWindow> g_previewWindows;
+
+// The last image of each window, taken while its desktop was in view, so
+// previews of other desktops show what was on them. Pixels are kept in memory
+// (premultiplied BGRA); the Direct2D bitmap is rebuilt on demand because it
+// belongs to the render target.
+struct WindowSnapshot
+{
+    int w = 0, h = 0;
+    std::vector<BYTE> pixels;
+    ULONGLONG taken = 0;
+    ID2D1Bitmap* bitmap = nullptr;
+};
+static std::map<HWND, WindowSnapshot> g_snapshots;
+static int g_snapshotsThisPass = 0;
+static ID2D1Bitmap* g_wallpaperBitmap = nullptr;
+static std::wstring g_wallpaperPath;
+static std::wstring g_loadedWallpaperPath;
+static bool g_wallpaperQueried = false;
 static std::vector<int> g_filtered;
 static std::vector<DesktopInfo> g_desktops;
 static int g_currentDesktop = 0;
@@ -1194,7 +1234,8 @@ static void LoadSettings()
                                         : StripStyle::Flat;
     g_tabStyle = tabs == L"chip" ? TabStyle::Chip
                : tabs == L"cards" ? TabStyle::Cards
-                                  : TabStyle::Pill;
+               : tabs == L"preview" ? TabStyle::Preview
+                                    : TabStyle::Pill;
 
     const std::wstring cardSize = read(L"Cards.Size");
     g_cardScale = cardSize == L"small" ? 0.82f
@@ -1290,12 +1331,36 @@ static void ReleaseIcons()
         }
         entry.iconSize = 0.0f;
     }
+    for (PreviewWindow& window : g_previewWindows)
+    {
+        if (window.icon)
+        {
+            window.icon->Release();
+            window.icon = nullptr;
+        }
+        window.iconSize = 0.0f;
+    }
 }
 
 static void ReleaseDeviceResources()
 {
     ReleaseIcons();
+    for (auto& entry : g_snapshots)
+    {
+        if (entry.second.bitmap)
+        {
+            entry.second.bitmap->Release();
+            entry.second.bitmap = nullptr;
+        }
+    }
     ReleaseCardDesignBitmap();
+    if (g_wallpaperBitmap)
+    {
+        g_wallpaperBitmap->Release();
+        g_wallpaperBitmap = nullptr;
+    }
+    g_loadedWallpaperPath.clear();
+    g_wallpaperQueried = false;
     if (g_d2dLayer) { g_d2dLayer->Release(); g_d2dLayer = nullptr; }
     if (g_d2dBrush) { g_d2dBrush->Release(); g_d2dBrush = nullptr; }
     if (g_d2dTarget) { g_d2dTarget->Release(); g_d2dTarget = nullptr; }
@@ -1447,6 +1512,77 @@ static ID2D1Bitmap* EnsureCardBackBitmap()
 {
     return EnsureBitmapFromPath(g_cardBackPath, g_cardBackBitmap,
                                 g_loadedCardBackPath);
+}
+
+// The current wallpaper, downscaled to thumbnail size so opening the overview
+// does not decode and upload a full 4K image. Returns null when there is no
+// picture wallpaper (solid colour, slideshow) or it cannot be decoded.
+static ID2D1Bitmap* EnsureWallpaperBitmap()
+{
+    if (!g_d2dTarget)
+        return nullptr;
+    if (!g_wallpaperQueried)
+    {
+        g_wallpaperQueried = true;
+        WCHAR path[MAX_PATH] = {};
+        if (SystemParametersInfoW(SPI_GETDESKWALLPAPER, ARRAYSIZE(path), path, 0))
+            g_wallpaperPath = path;
+        else
+            g_wallpaperPath.clear();
+    }
+    if (g_wallpaperPath.empty())
+        return nullptr;
+    if (g_loadedWallpaperPath == g_wallpaperPath)
+        return g_wallpaperBitmap;  // Already loaded, or already failed.
+
+    if (g_wallpaperBitmap)
+    {
+        g_wallpaperBitmap->Release();
+        g_wallpaperBitmap = nullptr;
+    }
+    g_loadedWallpaperPath = g_wallpaperPath;
+
+    IWICImagingFactory* factory = nullptr;
+    IWICBitmapDecoder* decoder = nullptr;
+    IWICBitmapFrameDecode* frame = nullptr;
+    IWICBitmapScaler* scaler = nullptr;
+    IWICFormatConverter* converter = nullptr;
+    bool ok = false;
+    if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                   CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+        SUCCEEDED(factory->CreateDecoderFromFilename(
+            g_wallpaperPath.c_str(), nullptr, GENERIC_READ,
+            WICDecodeMetadataCacheOnDemand, &decoder)) &&
+        SUCCEEDED(decoder->GetFrame(0, &frame)))
+    {
+        UINT width = 0, height = 0;
+        frame->GetSize(&width, &height);
+        IWICBitmapSource* source = frame;
+        if (width > 640 && height > 0)
+        {
+            const UINT scaledW = 640;
+            const UINT scaledH = std::max<UINT>(1, height * scaledW / width);
+            if (SUCCEEDED(factory->CreateBitmapScaler(&scaler)) &&
+                SUCCEEDED(scaler->Initialize(frame, scaledW, scaledH,
+                                             WICBitmapInterpolationModeFant)))
+                source = scaler;
+        }
+        if (SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
+            SUCCEEDED(converter->Initialize(
+                source, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
+                nullptr, 0.0f, WICBitmapPaletteTypeMedianCut)) &&
+            SUCCEEDED(g_d2dTarget->CreateBitmapFromWicBitmap(
+                converter, nullptr, &g_wallpaperBitmap)))
+            ok = true;
+    }
+    if (converter) converter->Release();
+    if (scaler) scaler->Release();
+    if (frame) frame->Release();
+    if (decoder) decoder->Release();
+    if (factory) factory->Release();
+    if (!ok)
+        g_wallpaperBitmap = nullptr;
+    return g_wallpaperBitmap;
 }
 
 static void DrawBitmapCover(ID2D1Bitmap* bitmap, const RectF& bounds, float alpha)
@@ -1865,6 +2001,258 @@ static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM)
     return TRUE;
 }
 
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
+
+// Takes a fresh image of a window that is visible right now and keeps it for
+// the desktop previews. Recent snapshots are reused, and the number taken per
+// pass is capped, so opening the overview stays quick.
+static void CaptureWindowSnapshot(HWND hwnd, const RECT& frame)
+{
+    const ULONGLONG now = GetTickCount64();
+    const auto existing = g_snapshots.find(hwnd);
+    if (existing != g_snapshots.end() && now - existing->second.taken < 2000)
+        return;
+    if (g_snapshotsThisPass >= 16 || IsHungAppWindow(hwnd))
+        return;
+
+    RECT windowRect = {};
+    if (!GetWindowRect(hwnd, &windowRect))
+        return;
+    const int ww = windowRect.right - windowRect.left;
+    const int wh = windowRect.bottom - windowRect.top;
+    const int fw = frame.right - frame.left;
+    const int fh = frame.bottom - frame.top;
+    if (ww <= 0 || wh <= 0 || fw <= 0 || fh <= 0)
+        return;
+    g_snapshotsThisPass++;
+
+    // Crop to the visible frame (the window rect includes invisible resize
+    // borders) and shrink to a thumbnail-friendly size.
+    const int srcX = std::max(0, std::min(ww - 1, static_cast<int>(frame.left - windowRect.left)));
+    const int srcY = std::max(0, std::min(wh - 1, static_cast<int>(frame.top - windowRect.top)));
+    const int srcW = std::max(1, std::min(fw, ww - srcX));
+    const int srcH = std::max(1, std::min(fh, wh - srcY));
+    const float k = std::min(1.0f, 480.0f / static_cast<float>(std::max(srcW, srcH)));
+    const int dw = std::max(1, static_cast<int>(std::lround(srcW * k)));
+    const int dh = std::max(1, static_cast<int>(std::lround(srcH * k)));
+
+    HDC screen = GetDC(nullptr);
+    HDC fullDc = screen ? CreateCompatibleDC(screen) : nullptr;
+    HBITMAP fullBmp = screen ? CreateCompatibleBitmap(screen, ww, wh) : nullptr;
+    HDC smallDc = screen ? CreateCompatibleDC(screen) : nullptr;
+
+    BITMAPINFO info = {};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = dw;
+    info.bmiHeader.biHeight = -dh;  // Top-down.
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP smallBmp = screen ? CreateDIBSection(screen, &info, DIB_RGB_COLORS,
+                                                 &bits, nullptr, 0)
+                              : nullptr;
+
+    if (fullDc && fullBmp && smallDc && smallBmp && bits)
+    {
+        HGDIOBJ oldFull = SelectObject(fullDc, fullBmp);
+        HGDIOBJ oldSmall = SelectObject(smallDc, smallBmp);
+
+        if (PrintWindow(hwnd, fullDc, PW_RENDERFULLCONTENT))
+        {
+            SetStretchBltMode(smallDc, HALFTONE);
+            SetBrushOrgEx(smallDc, 0, 0, nullptr);
+            StretchBlt(smallDc, 0, 0, dw, dh, fullDc, srcX, srcY, srcW, srcH,
+                       SRCCOPY);
+
+            // GDI leaves alpha at zero. Make the image opaque, and reject
+            // all-black results (some GPU windows cannot be printed).
+            BYTE* pixels = static_cast<BYTE*>(bits);
+            const size_t count = static_cast<size_t>(dw) * dh;
+            bool anyColor = false;
+            for (size_t i = 0; i < count; i++)
+            {
+                if (pixels[i * 4] | pixels[i * 4 + 1] | pixels[i * 4 + 2])
+                    anyColor = true;
+                pixels[i * 4 + 3] = 255;
+            }
+
+            if (anyColor)
+            {
+                WindowSnapshot& snapshot = g_snapshots[hwnd];
+                if (snapshot.bitmap)
+                {
+                    snapshot.bitmap->Release();
+                    snapshot.bitmap = nullptr;
+                }
+                snapshot.w = dw;
+                snapshot.h = dh;
+                snapshot.pixels.assign(pixels, pixels + count * 4);
+                snapshot.taken = now;
+            }
+        }
+
+        SelectObject(fullDc, oldFull);
+        SelectObject(smallDc, oldSmall);
+    }
+
+    if (smallBmp)
+        DeleteObject(smallBmp);
+    if (smallDc)
+        DeleteDC(smallDc);
+    if (fullBmp)
+        DeleteObject(fullBmp);
+    if (fullDc)
+        DeleteDC(fullDc);
+    if (screen)
+        ReleaseDC(nullptr, screen);
+}
+
+static WindowSnapshot* FindSnapshot(HWND hwnd)
+{
+    const auto it = g_snapshots.find(hwnd);
+    return it == g_snapshots.end() ? nullptr : &it->second;
+}
+
+static ID2D1Bitmap* EnsureSnapshotBitmap(WindowSnapshot& snapshot)
+{
+    if (snapshot.bitmap)
+        return snapshot.bitmap;
+    if (!g_d2dTarget || snapshot.w <= 0 || snapshot.h <= 0 ||
+        snapshot.pixels.size() != static_cast<size_t>(snapshot.w) * snapshot.h * 4)
+        return nullptr;
+
+    const D2D1_BITMAP_PROPERTIES properties = D2D1::BitmapProperties(
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                          D2D1_ALPHA_MODE_PREMULTIPLIED));
+    if (FAILED(g_d2dTarget->CreateBitmap(
+            D2D1::SizeU(static_cast<UINT32>(snapshot.w),
+                        static_cast<UINT32>(snapshot.h)),
+            snapshot.pixels.data(), static_cast<UINT32>(snapshot.w) * 4,
+            properties, &snapshot.bitmap)))
+        snapshot.bitmap = nullptr;
+    return snapshot.bitmap;
+}
+
+// Collects every window of every virtual desktop (independent of the search
+// scope) for the desktop preview tabs.
+static BOOL CALLBACK EnumPreviewWindowsProc(HWND hwnd, LPARAM)
+{
+    if (hwnd == g_overlay || hwnd == g_control)
+        return TRUE;
+    if (GetAncestor(hwnd, GA_ROOT) != hwnd)
+        return TRUE;
+    if (!IsWindowVisible(hwnd) || IsIconic(hwnd) || IsShellWindow(hwnd))
+        return TRUE;
+
+    const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+    if ((style & WS_CHILD) != 0)
+        return TRUE;
+    const LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    if ((exStyle & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)) != 0)
+        return TRUE;
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (!pid || pid == GetCurrentProcessId())
+        return TRUE;
+    if (GetWindowTextLengthW(hwnd) <= 0)
+        return TRUE;
+
+    int desktopIndex = -1;
+    bool onCurrent = true;
+    if (g_vdm)
+    {
+        GUID id = {};
+        if (SUCCEEDED(g_vdm->GetWindowDesktopId(hwnd, &id)))
+            desktopIndex = DesktopIndexForId(id);
+        onCurrent = IsWindowOnCurrentDesktop(hwnd);
+    }
+
+    int desktop;
+    if (onCurrent)
+    {
+        // Cloaked windows on the current desktop are suspended UWP shells.
+        DWORD cloaked = 0;
+        if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked,
+                                            sizeof(cloaked))) &&
+            cloaked != 0)
+            return TRUE;
+        // Visible here but tagged with another desktop: pinned to all.
+        desktop = (desktopIndex >= 0 && desktopIndex != g_currentDesktop)
+                      ? -1
+                      : g_currentDesktop;
+    }
+    else
+    {
+        if (desktopIndex < 0)
+            return TRUE;
+        desktop = desktopIndex;
+    }
+
+    RECT bounds = {};
+    if (FAILED(DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &bounds,
+                                     sizeof(bounds))) &&
+        !GetWindowRect(hwnd, &bounds))
+        return TRUE;
+
+    const RECT monitor = {g_monitorX, g_monitorY, g_monitorX + g_monitorW,
+                          g_monitorY + g_monitorH};
+    RECT clipped = {};
+    if (!IntersectRect(&clipped, &bounds, &monitor))
+        return TRUE;
+
+    PreviewWindow window;
+    window.hwnd = hwnd;
+    window.desktop = desktop;
+    window.rect = {static_cast<float>(clipped.left - g_monitorX),
+                   static_cast<float>(clipped.top - g_monitorY),
+                   static_cast<float>(clipped.right - g_monitorX),
+                   static_cast<float>(clipped.bottom - g_monitorY)};
+    const float frameW = static_cast<float>(std::max<LONG>(1, bounds.right - bounds.left));
+    const float frameH = static_cast<float>(std::max<LONG>(1, bounds.bottom - bounds.top));
+    window.u0 = (clipped.left - bounds.left) / frameW;
+    window.v0 = (clipped.top - bounds.top) / frameH;
+    window.u1 = (clipped.right - bounds.left) / frameW;
+    window.v1 = (clipped.bottom - bounds.top) / frameH;
+    g_previewWindows.push_back(window);
+
+    // Windows on the desktop in view can be imaged now; other desktops keep
+    // the image taken the last time they were in view.
+    if (onCurrent)
+        CaptureWindowSnapshot(hwnd, bounds);
+    return TRUE;
+}
+
+static ID2D1Bitmap* EnsurePreviewIcon(PreviewWindow& window, int pixels)
+{
+    if (pixels <= 0)
+        return nullptr;
+    if (window.icon && window.iconSize == static_cast<float>(pixels))
+        return window.icon;
+    if (window.icon)
+    {
+        window.icon->Release();
+        window.icon = nullptr;
+    }
+    window.iconSize = 0.0f;
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(window.hwnd, &pid);
+    bool owned = false;
+    HICON hicon = GetWindowIcon(window.hwnd, GetProcessImagePath(pid), &owned);
+    if (hicon)
+    {
+        window.icon = CreateIconBitmap(hicon, pixels);
+        window.iconSize = static_cast<float>(pixels);
+        if (owned)
+            DestroyIcon(hicon);
+    }
+    return window.icon;
+}
+
 static void RebuildFilter()
 {
     g_filtered.clear();
@@ -1888,6 +2276,27 @@ static void RebuildWindowList()
     ReleaseIcons();
     g_windows.clear();
     EnumWindows(EnumWindowsProc, 0);
+    g_previewWindows.clear();
+    if (g_tabStyle == TabStyle::Preview)
+    {
+        g_snapshotsThisPass = 0;
+        EnumWindows(EnumPreviewWindowsProc, 0);
+
+        // Forget the images of windows that no longer exist.
+        for (auto it = g_snapshots.begin(); it != g_snapshots.end();)
+        {
+            if (!IsWindow(it->first))
+            {
+                if (it->second.bitmap)
+                    it->second.bitmap->Release();
+                it = g_snapshots.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
     if (g_searchAllDesktops)
     {
         // Keep z-order within each desktop, but group all-desktop results by
@@ -2697,6 +3106,11 @@ static bool UsesCards()
     return g_tabStyle == TabStyle::Cards;
 }
 
+static bool UsesPreviews()
+{
+    return g_tabStyle == TabStyle::Preview;
+}
+
 static bool UsesWindowChips()
 {
     return g_windowTabStyle == WindowTabStyle::Chips;
@@ -2919,6 +3333,27 @@ static RectF TransformedBounds(const RectF& rect, float scale, float degrees)
     return {cx - extentX, cy - extentY, cx + extentX, cy + extentY};
 }
 
+// Size of one desktop preview tab: a thumbnail with the monitor's aspect ratio
+// and the desktop name underneath.
+struct PreviewMetrics
+{
+    float thumbW, thumbH, labelH, totalH;
+};
+
+static PreviewMetrics PreviewTabMetrics(float s)
+{
+    const float aspect =
+        g_layout.w > 0.0f
+            ? std::max(0.5f, std::min(0.75f, g_layout.h / g_layout.w))
+            : 0.5625f;
+    PreviewMetrics m;
+    m.thumbW = 176.0f * s;
+    m.thumbH = m.thumbW * aspect;
+    m.labelH = 28.0f * s;
+    m.totalH = m.thumbH + m.labelH;
+    return m;
+}
+
 static void RebuildPills()
 {
     g_pills.clear();
@@ -2926,24 +3361,30 @@ static void RebuildPills()
     const bool cards = UsesCards();
     const bool wheel = IsWheel();
     const bool chips = UsesChips();
+    const bool previews = UsesPreviews();
+    const PreviewMetrics pm = PreviewTabMetrics(s);
     const float cardScale = g_cardScale * (g_tuckCards ? 1.18f : 1.0f);
     const float cardW = 160.0f * cardScale * s;
     const float cardH = 224.0f * cardScale * s;
     const float chipD = (wheel ? 64.0f : 52.0f) * s;
-    const float pillH = cards ? cardH
+    const float pillH = previews ? pm.totalH
+                       : cards ? cardH
                        : wheel ? (chips ? 85.0f : 52.0f) * s
                                : (chips ? 71.0f : 42.0f) * s;
     const float gap = 10.0f * s;
-    const float createW = cards ? 112.0f * cardScale * s : 42.0f * s;
-    const float createH = cards ? createW * 1.4f : 42.0f * s;
+    const float createW = previews ? pm.thumbW * 0.5f
+                          : cards ? 112.0f * cardScale * s : 42.0f * s;
+    const float createH = previews ? pm.thumbH
+                          : cards ? createW * 1.4f : 42.0f * s;
 
     float nameWidths[64] = {};
     float maxWidth = 0.0f;
     const int count = std::min<int>(static_cast<int>(g_desktops.size()),
                                     ARRAYSIZE(nameWidths));
 
-    // Cards use a fixed shape, so only pills and chips measure their labels.
-    if (!cards)
+    // Cards and previews use a fixed shape, so only pills and chips measure
+    // their labels.
+    if (!cards && !previews)
     {
         for (int i = 0; i < count; i++)
         {
@@ -2987,6 +3428,14 @@ static void RebuildPills()
         const float r = diameter / 2.0f;
         pill.closeRect = {ccx + 0.35f * r, ccy - 0.95f * r,
                           ccx + 0.95f * r, ccy - 0.35f * r};
+        pill.closeHit =
+            TransformedBounds(pill.closeRect, pill.scale, pill.angle);
+    };
+
+    // Close button in the top-right corner of a preview thumbnail.
+    auto setPreviewClose = [&](PillView& pill) {
+        pill.closeRect = {pill.rect.r - 28.0f * s, pill.rect.t + 6.0f * s,
+                          pill.rect.r - 6.0f * s, pill.rect.t + 28.0f * s};
         pill.closeHit =
             TransformedBounds(pill.closeRect, pill.scale, pill.angle);
     };
@@ -3123,7 +3572,9 @@ static void RebuildPills()
         // The carousel keeps one tab width so the wheel stays symmetric; long
         // names are ellipsized. Chips use a compact fixed width, while the
         // rename editor gets room because it is always centred while editing.
-        const float pillW = chips
+        const float pillW = previews
+            ? pm.thumbW
+            : chips
             ? (g_renameDesktop >= 0 ? 220.0f * s : 96.0f * s)
             : (g_renameDesktop >= 0
                    ? 380.0f * s
@@ -3167,7 +3618,11 @@ static void RebuildPills()
 
                 if (pill.hasClose)
                 {
-                    if (chips)
+                    if (previews)
+                    {
+                        setPreviewClose(pill);
+                    }
+                    else if (chips)
                     {
                         setChipClose(pill, std::min(chipD, pillW - 4.0f * s));
                     }
@@ -3188,6 +3643,44 @@ static void RebuildPills()
         g_createRect = {g_layout.strip.r - createW - 12.0f * s,
                         cy - createH / 2.0f, g_layout.strip.r - 12.0f * s,
                         cy + createH / 2.0f};
+        applyLift();
+        return;
+    }
+
+    if (previews)
+    {
+        // Flat row of desktop previews: shrink the row if it cannot fit next
+        // to the create tile.
+        const float previewGap = 14.0f * s;
+        const float available =
+            g_layout.strip.W() - createW - previewGap - 24.0f * s;
+        const float needed = count * pm.thumbW + (count - 1) * previewGap;
+        const float fit = needed > available && needed > 0.0f
+                              ? std::max(0.35f, available / needed)
+                              : 1.0f;
+        const float drawW = pm.thumbW * fit;
+        const float drawH = pm.thumbH * fit + pm.labelH;
+        const float gapFit = previewGap * fit;
+        const float createFitW = createW * fit;
+        const float total = count * drawW + count * gapFit + createFitW;
+        float cursor = g_layout.strip.l + (g_layout.strip.W() - total) / 2.0f;
+        const float top = g_layout.strip.t + (g_layout.strip.H() - drawH) / 2.0f;
+
+        for (int i = 0; i < count; i++)
+        {
+            PillView pill;
+            pill.desktop = i;
+            pill.rect = {cursor, top, cursor + drawW, top + drawH};
+            pill.hit = pill.rect;
+            pill.hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
+            if (pill.hasClose)
+                setPreviewClose(pill);
+            g_pills.push_back(pill);
+            cursor += drawW + gapFit;
+        }
+
+        g_createRect = {cursor, top, cursor + createFitW,
+                        top + pm.thumbH * fit};
         applyLift();
         return;
     }
@@ -3340,12 +3833,15 @@ static void UpdateLayout()
 
     const bool tuckedCards = UsesCards() && g_tuckCards;
     const float stripH =
-        (UsesCards()
-             ? (tuckedCards ? 112.0f * g_cardScale * 1.18f + 24.0f
-                            : 224.0f * g_cardScale + 40.0f)
-             : g_stripStyle == StripStyle::Carousel
-                   ? (UsesChips() ? 112.0f : 96.0f)
-                   : (UsesChips() ? 92.0f : 64.0f)) * s;
+        UsesPreviews()
+            ? PreviewTabMetrics(s).totalH +
+                  (g_stripStyle == StripStyle::Carousel ? 48.0f : 28.0f) * s
+            : (UsesCards()
+                   ? (tuckedCards ? 112.0f * g_cardScale * 1.18f + 24.0f
+                                  : 224.0f * g_cardScale + 40.0f)
+                   : g_stripStyle == StripStyle::Carousel
+                         ? (UsesChips() ? 112.0f : 96.0f)
+                         : (UsesChips() ? 92.0f : 64.0f)) * s;
     const float stripBottom = g_layout.h - (tuckedCards ? 0.0f : 46.0f * s);
     g_layout.strip = {margin, stripBottom - stripH, g_layout.w - margin, stripBottom};
     g_layout.grid = {margin, g_layout.search.b + 42.0f * s, g_layout.w - margin,
@@ -6248,6 +6744,177 @@ static void DrawCardAnimation()
     g_d2dTarget->SetTransform(saved);
 }
 
+// A desktop tab rendered as a Windows-style preview: a thumbnail of the
+// desktop (wallpaper plus its windows at their real positions, each with its
+// app icon) with the desktop name underneath.
+static void DrawDesktopPreview(const PillView& pill, bool active, bool hovered,
+                               bool selected, bool closeHovered)
+{
+    if (!g_d2dTarget || !g_d2dBrush)
+        return;
+
+    const float s = g_scale;
+    const float alpha = pill.alpha;
+    const float labelH = 28.0f * s;
+    const RectF face = {pill.rect.l, pill.rect.t - pill.lift, pill.rect.r,
+                        pill.rect.b - pill.lift};
+    const RectF thumb = {face.l, face.t, face.r, face.b - labelH};
+    if (thumb.W() <= 8.0f || thumb.H() <= 8.0f)
+        return;
+
+    const float radius = 8.0f * s;
+    const float emphasis = DesktopHighlightStrength(selected, active);
+
+    if (!StripBackgroundVisible() || pill.lift > 0.0f)
+    {
+        const RectF shadow = {thumb.l, thumb.t + 5.0f * s + pill.lift * 0.25f,
+                              thumb.r, thumb.b + 9.0f * s + pill.lift};
+        FillRound(shadow, radius + 2.0f * s, 0xFF000000,
+                  0.30f * alpha + (pill.lift > 0.0f ? 0.08f : 0.0f));
+    }
+
+    // Backdrop: the wallpaper, or a flat fill when there is no picture.
+    FillRound(thumb, radius, g_theme.previewFill, alpha);
+    if (ID2D1Bitmap* wallpaper = EnsureWallpaperBitmap())
+    {
+        ID2D1BitmapBrush* brush = nullptr;
+        if (SUCCEEDED(g_d2dTarget->CreateBitmapBrush(wallpaper, &brush)) && brush)
+        {
+            const D2D1_SIZE_F size = wallpaper->GetSize();
+            const float k = std::max(thumb.W() / size.width, thumb.H() / size.height);
+            const float ox = thumb.l + (thumb.W() - size.width * k) / 2.0f;
+            const float oy = thumb.t + (thumb.H() - size.height * k) / 2.0f;
+            brush->SetTransform(D2D1::Matrix3x2F::Scale(k, k) *
+                                D2D1::Matrix3x2F::Translation(ox, oy));
+            brush->SetOpacity(alpha);
+            const D2D1_ROUNDED_RECT rounded = D2D1::RoundedRect(
+                D2D1::RectF(thumb.l, thumb.t, thumb.r, thumb.b), radius, radius);
+            g_d2dTarget->FillRoundedRectangle(&rounded, brush);
+            brush->Release();
+        }
+    }
+
+    // The desktop's windows, bottom of the z-order first.
+    if (g_layout.w > 0.0f && g_layout.h > 0.0f)
+    {
+        const float sx = thumb.W() / g_layout.w;
+        const float sy = thumb.H() / g_layout.h;
+        for (int k = static_cast<int>(g_previewWindows.size()) - 1; k >= 0; k--)
+        {
+            PreviewWindow& window = g_previewWindows[k];
+            if (window.desktop != -1 && window.desktop != pill.desktop)
+                continue;
+            const RectF r = {thumb.l + window.rect.l * sx,
+                             thumb.t + window.rect.t * sy,
+                             thumb.l + window.rect.r * sx,
+                             thumb.t + window.rect.b * sy};
+            if (r.W() < 4.0f * s || r.H() < 4.0f * s)
+                continue;
+
+            const float corner = 3.0f * s;
+
+            // The window as it last looked, when an image of it exists.
+            WindowSnapshot* snapshot = FindSnapshot(window.hwnd);
+            if (ID2D1Bitmap* shot =
+                    snapshot ? EnsureSnapshotBitmap(*snapshot) : nullptr)
+            {
+                FillRound(r, corner, g_theme.cardFill, alpha);
+                const D2D1_RECT_F source =
+                    D2D1::RectF(window.u0 * snapshot->w, window.v0 * snapshot->h,
+                                window.u1 * snapshot->w, window.v1 * snapshot->h);
+                const D2D1_RECT_F dest = D2D1::RectF(r.l, r.t, r.r, r.b);
+                g_d2dTarget->DrawBitmap(shot, &dest, alpha,
+                                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                                        &source);
+                StrokeRound(r, corner, g_theme.text, 1.0f * s, 0.30f * alpha);
+                continue;
+            }
+
+            FillRound(r, corner, g_theme.cardFill, 0.95f * alpha);
+            const float barH = std::min(r.H(), 5.0f * s);
+            FillRound({r.l, r.t, r.r, r.t + barH}, corner, g_theme.text,
+                      0.16f * alpha);
+            StrokeRound(r, corner, g_theme.text, 1.0f * s, 0.30f * alpha);
+
+            const float room = std::min(r.W(), r.H() - barH);
+            const float iconSize = std::min(28.0f * s, room * 0.5f);
+            if (iconSize >= 10.0f * s)
+            {
+                const int pixels = static_cast<int>(std::lround(iconSize));
+                if (ID2D1Bitmap* icon = EnsurePreviewIcon(window, pixels))
+                {
+                    const float icx = (r.l + r.r) / 2.0f;
+                    const float icy = (r.t + barH + r.b) / 2.0f;
+                    const D2D1_RECT_F dest =
+                        D2D1::RectF(icx - pixels / 2.0f, icy - pixels / 2.0f,
+                                    icx + pixels / 2.0f, icy + pixels / 2.0f);
+                    g_d2dTarget->DrawBitmap(
+                        icon, &dest, alpha, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                }
+            }
+        }
+    }
+
+    if (hovered)
+        FillRound(thumb, radius, 0xFFFFFFFF, 0.08f * alpha);
+
+    if (emphasis > 0.0f)
+        StrokeRound(thumb, radius, g_theme.accent, (selected ? 2.4f : 1.6f) * s,
+                    emphasis * alpha);
+    else
+        StrokeRound(thumb, radius, g_theme.text, 1.2f * s,
+                    (active ? 0.32f : 0.12f) * alpha);
+
+    // Name underneath, with an accent tick under the active desktop.
+    const bool renaming = g_renameDesktop == pill.desktop;
+    const RectF nameRect = {face.l + 2.0f * s, thumb.b + 4.0f * s,
+                            face.r - 2.0f * s, face.b - 3.0f * s};
+    if (renaming)
+        FillRound(nameRect, 6.0f * s, g_theme.text, 0.10f * alpha);
+    const std::wstring& shownName =
+        renaming ? g_renameText : g_desktops[pill.desktop].name;
+    DrawTextBlock(shownName, PillFormat(), nameRect, g_theme.text,
+                  DWRITE_TEXT_ALIGNMENT_CENTER,
+                  ((active || selected || renaming) ? 0.95f : 0.72f) * alpha);
+
+    if (renaming && ((GetTickCount64() / 530) % 2) == 0)
+    {
+        const float textW = MeasureTextWidth(g_renameText, PillFormat());
+        const float centre = (nameRect.l + nameRect.r) / 2.0f;
+        const float caretX = std::min(nameRect.r, centre + textW / 2.0f + 1.0f * s);
+        const float midY = (nameRect.t + nameRect.b) / 2.0f;
+        g_d2dBrush->SetColor(ColorOf(g_theme.text, 0.85f * alpha));
+        g_d2dTarget->DrawLine(D2D1::Point2F(caretX, midY - 8.0f * s),
+                              D2D1::Point2F(caretX, midY + 8.0f * s), g_d2dBrush,
+                              1.4f * s);
+    }
+
+    if (active)
+    {
+        const float centre = (face.l + face.r) / 2.0f;
+        FillRound({centre - 12.0f * s, face.b - 3.0f * s, centre + 12.0f * s,
+                   face.b - 1.0f * s},
+                  1.0f * s, g_theme.accent, 0.90f * alpha);
+    }
+
+    if (pill.hasClose && !renaming)
+    {
+        const float ccx = pill.closeRect.l + pill.closeRect.W() / 2.0f;
+        const float ccy = pill.closeRect.t + pill.closeRect.H() / 2.0f;
+        const float r = pill.closeRect.W() / 2.0f;
+        FillEllipse(ccx, ccy, r, r, closeHovered ? g_theme.danger : 0xFF000000,
+                    (closeHovered ? 0.95f : 0.55f) * alpha);
+        g_d2dBrush->SetColor(ColorOf(0xFFFFFFFF, 0.92f * alpha));
+        const float arm = 4.0f * s;
+        g_d2dTarget->DrawLine(D2D1::Point2F(ccx - arm, ccy - arm),
+                              D2D1::Point2F(ccx + arm, ccy + arm), g_d2dBrush,
+                              1.4f * s);
+        g_d2dTarget->DrawLine(D2D1::Point2F(ccx + arm, ccy - arm),
+                              D2D1::Point2F(ccx - arm, ccy + arm), g_d2dBrush,
+                              1.4f * s);
+    }
+}
+
 // A desktop tab rendered as a poker chip: coloured rim with edge spots, the
 // desktop number on the centre disc, and the name on a small label below.
 static void DrawChipTab(const PillView& pill, bool active, bool hovered,
@@ -7498,6 +8165,15 @@ static void RenderScene(HDC dc)
             continue;
         }
 
+        if (UsesPreviews())
+        {
+            DrawDesktopPreview(pill, active, hovered, selected,
+                               g_hoverPillClose == i);
+            if (transformed)
+                g_d2dTarget->SetTransform(D2D1::Matrix3x2F::Identity());
+            continue;
+        }
+
         if (UsesChips())
         {
             DrawChipTab(pill, active, hovered, selected, g_hoverPillClose == i);
@@ -8123,7 +8799,7 @@ static void FinishHide()
 {
     SetChipLayersVisible(false);
     ReleaseThumbnails();
-    StopOverlayTimers();`
+    StopOverlayTimers();
     if (g_overlay)
     {
         UnregisterHotKey(g_overlay, kHotkeyEscape);
