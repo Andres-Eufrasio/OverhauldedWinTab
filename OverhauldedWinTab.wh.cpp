@@ -2599,12 +2599,15 @@ static bool MoveWindowToDesktopInternal(HWND window, const GUID& id)
     return SUCCEEDED(hr);
 }
 
-// Keep two- and four-desktop carousels in stable slots for the entire session.
-// Preserve the initial wheel order around the active desktop; navigation only
-// moves the centre, never a neighbour to the other side of the wheel.
+// A two-desktop carousel keeps fixed slots for the entire session: the initial
+// order around the active desktop is preserved and navigation only moves the
+// centre, never a neighbour to the other side. With three or more desktops
+// every tab sits at its own index on a continuous wheel, and tabs that rotate
+// past the visible edge on one side re-enter from the opposite side (see
+// WrapDelta).
 static float CarouselDesktopPosition(int desktop, int count)
 {
-    if (count != 2 && count != 4)
+    if (count != 2)
         return static_cast<float>(desktop);
     int slot = (desktop - g_carouselAnchor + count) % count;
     if (slot > count / 2)
@@ -2619,14 +2622,15 @@ static void ResetCarouselPosition(int desktop, int count)
 }
 
 // Signed distance from the carousel position to a desktop or animation target.
-// Two and four desktops must not wrap: tabs keep their left/right order
-// throughout the animation, including its final frame. Other wheels take the
-// shortest path, wrapped into (-count/2, count/2].
+// Two desktops must not wrap: tabs keep their left/right order throughout the
+// animation, including its final frame. Other wheels take the shortest path,
+// wrapped into (-count/2, count/2], so a tab that leaves one side of the wheel
+// re-appears on the other.
 static float WrapDelta(float value, int count)
 {
     if (count <= 1)
         return 0.0f;
-    if (count == 2 || count == 4)
+    if (count == 2)
         return value;
     const float n = static_cast<float>(count);
     float d = std::fmod(value, n);
@@ -2635,6 +2639,25 @@ static float WrapDelta(float value, int count)
     if (d > n / 2.0f)
         d -= n;
     return d;
+}
+
+// Small wheels (3 and 4 tabs) wrap at count/2, which can be inside the visible
+// range, so a tab would visibly jump from one side to the other. Fade it out
+// completely before it reaches the wrap point; it fades back in on the far
+// side. Wider wheels hide tabs by depth before they wrap and are unaffected,
+// and a two-tab wheel never crosses the wrap point.
+static float WheelWrapFade(float absDepth, int count, float visibleDepth)
+{
+    if (count < 3)
+        return 1.0f;
+    const float half = static_cast<float>(count) / 2.0f;
+    if (half > visibleDepth)
+        return 1.0f;
+    const float band = 0.5f;
+    if (absDepth <= half - band)
+        return 1.0f;
+    const float t = std::max(0.0f, std::min(1.0f, (half - absDepth) / band));
+    return t * t * (3.0f - 2.0f * t);
 }
 
 static bool AdvanceCarousel(int desktop, int count, float blend)
@@ -3025,13 +3048,15 @@ static void RebuildPills()
             pill.desktop = i;
             pill.hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
             pill.depth = d;
-            pill.visible = ad <= visibleDepth;
+            const float wrapFade = WheelWrapFade(ad, count, visibleDepth);
+            pill.visible = ad <= visibleDepth && wrapFade > 0.001f;
             if (pill.visible)
             {
                 pill.scale = std::max(0.55f, 1.0f - 0.18f * ad);
                 pill.angle = std::max(-12.0f, std::min(12.0f, d * 4.5f));
                 pill.alpha =
-                    std::max(0.45f, 1.0f - 0.26f * std::max(0.0f, ad - 1.0f));
+                    std::max(0.45f, 1.0f - 0.26f * std::max(0.0f, ad - 1.0f)) *
+                    wrapFade;
 
                 const float px = cx + d * pitch * 0.82f;
                 const float py = (g_tuckCards ? g_layout.h : cy) +
@@ -3124,13 +3149,15 @@ static void RebuildPills()
             pill.desktop = i;
             pill.hasClose = g_desktops.size() > 1 && i == g_currentDesktop;
             pill.depth = d;
-            pill.visible = ad <= visibleDepth;
+            const float wrapFade = WheelWrapFade(ad, count, visibleDepth);
+            pill.visible = ad <= visibleDepth && wrapFade > 0.001f;
             if (pill.visible)
             {
                 pill.scale = std::max(0.55f, 1.0f - 0.18f * ad);
                 pill.angle = std::max(-12.0f, std::min(12.0f, d * 4.5f));
                 pill.alpha =
-                    std::max(0.45f, 1.0f - 0.26f * std::max(0.0f, ad - 1.0f));
+                    std::max(0.45f, 1.0f - 0.26f * std::max(0.0f, ad - 1.0f)) *
+                    wrapFade;
 
                 const float px = cx + d * pitch * 0.82f;
                 const float py = cy + std::min(12.0f * s, 2.5f * s * d * d);
@@ -8096,7 +8123,7 @@ static void FinishHide()
 {
     SetChipLayersVisible(false);
     ReleaseThumbnails();
-    StopOverlayTimers();
+    StopOverlayTimers();`
     if (g_overlay)
     {
         UnregisterHotKey(g_overlay, kHotkeyEscape);
