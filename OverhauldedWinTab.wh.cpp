@@ -46,7 +46,7 @@ closes the overview.
   icon or title, in four sizes and several color modes.
 - **Desktop strip**: flat or carousel layout with pill, chip, playing-card or
   Windows-style desktop preview tabs (wallpaper plus each desktop's windows),
-  optional tucked cards, and create/close animations.
+  in three sizes, with optional tucked cards and create/close animations.
 - **Card art**: built-in vector themes (Yu-Gi-Oh!, Pokémon, Kakegurui and Saiki
   K) or custom 2:3 portrait PNG/JPG faces.
 - **Held windows**: keep windows with you across desktops, in the grid or in a
@@ -204,18 +204,18 @@ MIT. See [LICENSE](LICENSE).
       $options:
       - "highlight": Accent outline
       - "lift": Pick up / lift
+    - Size: "medium"
+      $name: Desktop tab size
+      $description: Size of the desktop tabs, for every tab style. Pills get taller with larger text, poker chips get a bigger chip, desktop previews get a bigger thumbnail, and playing cards get a larger card.
+      $options:
+      - "small": Small
+      - "medium": Medium
+      - "large": Large
     - Wrap: true
       $name: Wrap desktop strip
       $description: Let Left/Right and h/l wrap from the last desktop back to the first in the strip.
   $name: Desktop strip
 - Cards:
-    - Size: "medium"
-      $name: Card size
-      $description: Size of the playing cards when Desktop tabs is set to Playing cards.
-      $options:
-      - "small": Small
-      - "medium": Medium
-      - "large": Large
     - Tucked: false
       $name: Tuck playing cards
       $description: Show the upper half of playing-card desktop tabs at the bottom of the screen, like cards held in your hand.
@@ -517,7 +517,10 @@ static bool g_searchAlwaysVisible = true;
 static StripStyle g_stripStyle = StripStyle::Flat;
 static TabStyle g_tabStyle = TabStyle::Pill;
 static StripBackground g_stripBackground = StripBackground::Auto;
-static float g_cardScale = 1.0f;
+// Size of the desktop tabs (DesktopStrip.Size), applied by every tab style.
+static float g_desktopScale = 1.0f;
+// Font scale the pill formats were last built for.
+static float g_fontDesktopScale = 0.0f;
 static bool g_tuckCards = false;
 static int g_animSpeedPercent = 100;
 static bool g_closeOnFocusLoss = true;
@@ -791,6 +794,10 @@ static IDWriteTextFormat* g_fmtCard = nullptr;
 static IDWriteTextFormat* g_fmtSearch = nullptr;
 static IDWriteTextFormat* g_fmtPill = nullptr;
 static IDWriteTextFormat* g_fmtPillLarge = nullptr;
+// Unscaled twins of the pill formats, for window chip titles, which do not
+// follow the desktop tab size.
+static IDWriteTextFormat* g_fmtWinChip = nullptr;
+static IDWriteTextFormat* g_fmtWinChipLarge = nullptr;
 static IDWriteTextFormat* g_fmtCardSuit = nullptr;
 static IDWriteTextFormat* g_fmtCardSuitBig = nullptr;
 static IDWriteTextFormat* g_fmtChipSuit = nullptr;
@@ -1237,9 +1244,9 @@ static void LoadSettings()
                : tabs == L"preview" ? TabStyle::Preview
                                     : TabStyle::Pill;
 
-    const std::wstring cardSize = read(L"Cards.Size");
-    g_cardScale = cardSize == L"small" ? 0.82f
-                : cardSize == L"large" ? 1.22f
+    const std::wstring tabSize = read(L"DesktopStrip.Size");
+    g_desktopScale = tabSize == L"small" ? 0.82f
+                : tabSize == L"large" ? 1.22f
                                        : 1.0f;
     g_tuckCards = Wh_GetIntSetting(L"Cards.Tucked") != 0;
     const std::wstring designPath = read(L"Cards.DesignPath");
@@ -1376,6 +1383,8 @@ static void ReleaseTextFormats()
     release(g_fmtSearch);
     release(g_fmtPill);
     release(g_fmtPillLarge);
+    release(g_fmtWinChip);
+    release(g_fmtWinChipLarge);
     release(g_fmtCardSuit);
     release(g_fmtCardSuitBig);
     release(g_fmtChipSuit);
@@ -1618,11 +1627,12 @@ static void DrawCardDesign(const RectF& face, float alpha)
 
 static void EnsureTextFormats()
 {
-    if (!g_dwrite || g_fontScale == g_scale)
+    if (!g_dwrite || (g_fontScale == g_scale && g_fontDesktopScale == g_desktopScale))
         return;
 
     ReleaseTextFormats();
     g_fontScale = g_scale;
+    g_fontDesktopScale = g_desktopScale;
 
     auto create = [](IDWriteFactory* factory, DWRITE_FONT_WEIGHT weight, float size,
                      IDWriteTextFormat** out) {
@@ -1634,8 +1644,10 @@ static void EnsureTextFormats()
     create(g_dwrite, DWRITE_FONT_WEIGHT_SEMI_BOLD, 30.0f * g_scale, &g_fmtTitle);
     create(g_dwrite, DWRITE_FONT_WEIGHT_NORMAL, 13.0f * g_scale, &g_fmtCard);
     create(g_dwrite, DWRITE_FONT_WEIGHT_NORMAL, 15.0f * g_scale, &g_fmtSearch);
-    create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 13.0f * g_scale, &g_fmtPill);
-    create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 15.0f * g_scale, &g_fmtPillLarge);
+    create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 13.0f * g_scale * g_desktopScale, &g_fmtPill);
+    create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 15.0f * g_scale * g_desktopScale, &g_fmtPillLarge);
+    create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 13.0f * g_scale, &g_fmtWinChip);
+    create(g_dwrite, DWRITE_FONT_WEIGHT_MEDIUM, 15.0f * g_scale, &g_fmtWinChipLarge);
 
     auto createSymbol = [](IDWriteFactory* factory, float size,
                            IDWriteTextFormat** out) {
@@ -1684,7 +1696,7 @@ static void EnsureTextFormats()
     IDWriteTextFormat* formats[] = {
         g_fmtTitle,    g_fmtCard,     g_fmtSearch,   g_fmtPill,
         g_fmtPillLarge, g_fmtHint,    g_fmtEmpty,    g_fmtCardSuit,
-        g_fmtCardSuitBig, g_fmtChipSuit};
+        g_fmtCardSuitBig, g_fmtChipSuit, g_fmtWinChip, g_fmtWinChipLarge};
     for (IDWriteTextFormat* format : formats)
     {
         if (format)
@@ -3347,7 +3359,7 @@ static PreviewMetrics PreviewTabMetrics(float s)
             ? std::max(0.5f, std::min(0.75f, g_layout.h / g_layout.w))
             : 0.5625f;
     PreviewMetrics m;
-    m.thumbW = 176.0f * s;
+    m.thumbW = 176.0f * s * g_desktopScale;
     m.thumbH = m.thumbW * aspect;
     m.labelH = 28.0f * s;
     m.totalH = m.thumbH + m.labelH;
@@ -3363,19 +3375,22 @@ static void RebuildPills()
     const bool chips = UsesChips();
     const bool previews = UsesPreviews();
     const PreviewMetrics pm = PreviewTabMetrics(s);
-    const float cardScale = g_cardScale * (g_tuckCards ? 1.18f : 1.0f);
+    // The desktop tab size means something different for each style: card
+    // scale, chip diameter, pill height with its text, or thumbnail width.
+    const float dsize = g_desktopScale;
+    const float cardScale = dsize * (g_tuckCards ? 1.18f : 1.0f);
     const float cardW = 160.0f * cardScale * s;
     const float cardH = 224.0f * cardScale * s;
-    const float chipD = (wheel ? 64.0f : 52.0f) * s;
+    const float chipD = (wheel ? 64.0f : 52.0f) * s * dsize;
     const float pillH = previews ? pm.totalH
                        : cards ? cardH
-                       : wheel ? (chips ? 85.0f : 52.0f) * s
-                               : (chips ? 71.0f : 42.0f) * s;
+                       : chips ? chipD + (wheel ? 21.0f : 19.0f) * s
+                       : (wheel ? 52.0f : 42.0f) * s * dsize;
     const float gap = 10.0f * s;
     const float createW = previews ? pm.thumbW * 0.5f
-                          : cards ? 112.0f * cardScale * s : 42.0f * s;
+                          : cards ? 112.0f * cardScale * s : 42.0f * s * dsize;
     const float createH = previews ? pm.thumbH
-                          : cards ? createW * 1.4f : 42.0f * s;
+                          : cards ? createW * 1.4f : 42.0f * s * dsize;
 
     float nameWidths[64] = {};
     float maxWidth = 0.0f;
@@ -3409,7 +3424,7 @@ static void RebuildPills()
                 if (renaming)
                     w += 18.0f * s;
                 const float maxW = renaming ? 460.0f * s : 320.0f * s;
-                w = std::max(112.0f * s, std::min(maxW, w));
+                w = std::max(112.0f * s * dsize, std::min(maxW, w));
                 nameWidths[i] = w;
             }
             maxWidth = std::max(maxWidth, nameWidths[i]);
@@ -3575,10 +3590,11 @@ static void RebuildPills()
         const float pillW = previews
             ? pm.thumbW
             : chips
-            ? (g_renameDesktop >= 0 ? 220.0f * s : 96.0f * s)
+            ? (g_renameDesktop >= 0 ? 220.0f * s : 96.0f * s * dsize)
             : (g_renameDesktop >= 0
                    ? 380.0f * s
-                   : std::max(160.0f * s, std::min(320.0f * s, maxWidth)));
+                   : std::max(160.0f * s * dsize,
+                              std::min(320.0f * s * dsize, maxWidth)));
         const float pitch = pillW + (chips ? 20.0f : 16.0f) * s;
         const float cx = g_layout.strip.l + g_layout.strip.W() / 2.0f;
 
@@ -3837,11 +3853,13 @@ static void UpdateLayout()
             ? PreviewTabMetrics(s).totalH +
                   (g_stripStyle == StripStyle::Carousel ? 48.0f : 28.0f) * s
             : (UsesCards()
-                   ? (tuckedCards ? 112.0f * g_cardScale * 1.18f + 24.0f
-                                  : 224.0f * g_cardScale + 40.0f)
+                   ? (tuckedCards ? 112.0f * g_desktopScale * 1.18f + 24.0f
+                                  : 224.0f * g_desktopScale + 40.0f)
                    : g_stripStyle == StripStyle::Carousel
-                         ? (UsesChips() ? 112.0f : 96.0f)
-                         : (UsesChips() ? 92.0f : 64.0f)) * s;
+                         ? (UsesChips() ? 64.0f * g_desktopScale + 48.0f
+                                        : 52.0f * g_desktopScale + 44.0f)
+                         : (UsesChips() ? 52.0f * g_desktopScale + 40.0f
+                                        : 42.0f * g_desktopScale + 22.0f)) * s;
     const float stripBottom = g_layout.h - (tuckedCards ? 0.0f : 46.0f * s);
     g_layout.strip = {margin, stripBottom - stripH, g_layout.w - margin, stripBottom};
     g_layout.grid = {margin, g_layout.search.b + 42.0f * s, g_layout.w - margin,
@@ -6425,7 +6443,7 @@ static RectF FutureDesktopCardRect()
     }
 
     // Fallback: a card-sized rectangle centred on the strip.
-    const float cardScale = g_cardScale * (g_tuckCards ? 1.18f : 1.0f);
+    const float cardScale = g_desktopScale * (g_tuckCards ? 1.18f : 1.0f);
     const float cardW = 160.0f * cardScale * s;
     const float cardH = 224.0f * cardScale * s;
     const float cx = (g_layout.strip.l + g_layout.strip.r) / 2.0f;
@@ -6924,7 +6942,8 @@ static void DrawChipTab(const PillView& pill, bool active, bool hovered,
     const float alpha = pill.alpha;
     const RectF tab = {pill.rect.l, pill.rect.t - pill.lift, pill.rect.r,
                        pill.rect.b - pill.lift};
-    const float baseD = (g_stripStyle == StripStyle::Carousel ? 64.0f : 52.0f) * s;
+    const float baseD = (g_stripStyle == StripStyle::Carousel ? 64.0f : 52.0f) * s *
+                        g_desktopScale;
     const float chipD = std::max(24.0f * s, std::min(baseD, tab.W() - 4.0f * s));
     const float r = chipD / 2.0f;
     const float cx = tab.l + tab.W() / 2.0f;
@@ -7217,8 +7236,8 @@ static void DrawWindowChip(const CardView& card, bool selected, bool hovered,
     // preview or the inlaid spots. Centring it in the clear band keeps both
     // rings from crowding the glyphs.
     IDWriteTextFormat* titleFormat =
-        r >= 120.0f * s ? g_fmtPillLarge
-        : r >= 80.0f * s ? g_fmtPill
+        r >= 120.0f * s ? g_fmtWinChipLarge
+        : r >= 80.0f * s ? g_fmtWinChip
                          : g_fmtHint;
     const float titleInner = previewR + 3.6f * s;
     const float titleOuter = r * 0.86f - 1.6f * s;
