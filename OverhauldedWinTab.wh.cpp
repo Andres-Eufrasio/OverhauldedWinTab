@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.9.5
+// @version         0.9.6
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -713,6 +713,19 @@ struct DesktopInfo
 };
 
 static std::vector<WindowEntry> g_windows;
+// Re-enumeration happens after a desktop action. App paths are immutable for a
+// process lifetime, so avoid an OpenProcess/QueryFullProcessImageName pair for
+// every visible window on every switch.
+static std::map<DWORD, std::wstring> g_processPathCache;
+struct CachedWindowIcon
+{
+    ID2D1Bitmap* bitmap = nullptr;
+    float size = 0.0f;
+};
+// Icons belong to the current D2D target but not to a desktop. Transfer them
+// through a model rebuild so switching desktops does not synchronously ask each
+// application for WM_GETICON again on the next paint.
+static std::map<HWND, CachedWindowIcon> g_recycledWindowIcons;
 
 // Miniature desktop previews (the "Desktop previews" tab style). Windows on
 // other virtual desktops are DWM-cloaked and cannot be captured live, so each
@@ -804,6 +817,15 @@ static IDWriteTextFormat* g_fmtHint = nullptr;
 static IDWriteTextFormat* g_fmtEmpty = nullptr;
 static IDWriteInlineObject* g_ellipsis = nullptr;
 static float g_fontScale = 0.0f;
+// UpdateLayout() is reached from every paint, including 60 Hz animation
+// paints. Most of its work (especially DirectWrite label measurement) only
+// changes in response to input, settings, or a model refresh. This key lets
+// animation frames reuse that static work.
+static uint64_t g_layoutBuildKey = 0;
+static uint64_t g_layoutSettingsGeneration = 0;
+static uint64_t g_pillMeasureKey = 0;
+static float g_pillNameWidths[64] = {};
+static float g_pillMaxNameWidth = 0.0f;
 
 // Layout results, rebuilt on demand.
 struct LayoutState
@@ -886,6 +908,10 @@ struct ThumbnailSet
 {
     std::vector<HTHUMBNAIL> handles;
     std::vector<HWND> sources;
+    // DWM updates cross the compositor boundary. Retain the last presentation
+    // state so a card-only animation does not re-submit every live thumbnail.
+    std::vector<RectF> rects;
+    BYTE opacity = 0;
 };
 static ThumbnailSet g_overlayThumbs;
 static ThumbnailSet g_chipThumbs;
@@ -1316,6 +1342,11 @@ static void LoadSettings()
               : theme == L"rose-pine" ? Palette::RosePine
               : Palette::Custom;
     ResolveTheme();
+    ++g_layoutSettingsGeneration;
+    // Settings can change every dimension and text format used by the cached
+    // layout. Force its replacement on the first paint after a reload.
+    g_layoutBuildKey = 0;
+    g_pillMeasureKey = 0;
 }
 
 static float AnimationSeconds(float baseSeconds)
@@ -1856,17 +1887,59 @@ static bool IsShellWindow(HWND hwnd)
 
 static std::wstring GetProcessImagePath(DWORD pid)
 {
+    const auto cached = g_processPathCache.find(pid);
+    if (cached != g_processPathCache.end())
+        return cached->second;
+
     std::wstring path;
     HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (!process)
+    {
+        g_processPathCache.emplace(pid, path);
         return path;
+    }
 
     WCHAR buffer[MAX_PATH * 2] = {};
     DWORD size = ARRAYSIZE(buffer);
     if (QueryFullProcessImageNameW(process, 0, buffer, &size))
         path.assign(buffer, size);
     CloseHandle(process);
+    g_processPathCache.emplace(pid, path);
     return path;
+}
+
+static void StashWindowIcons()
+{
+    for (WindowEntry& entry : g_windows)
+    {
+        if (!entry.icon)
+            continue;
+        CachedWindowIcon& cached = g_recycledWindowIcons[entry.hwnd];
+        if (cached.bitmap)
+            cached.bitmap->Release();
+        cached.bitmap = entry.icon;
+        cached.size = entry.iconSize;
+        entry.icon = nullptr;
+        entry.iconSize = 0.0f;
+    }
+}
+
+static void RestoreWindowIcon(WindowEntry& entry)
+{
+    const auto it = g_recycledWindowIcons.find(entry.hwnd);
+    if (it == g_recycledWindowIcons.end())
+        return;
+    entry.icon = it->second.bitmap;
+    entry.iconSize = it->second.size;
+    g_recycledWindowIcons.erase(it);
+}
+
+static void ReleaseStashedWindowIcons()
+{
+    for (auto& cached : g_recycledWindowIcons)
+        if (cached.second.bitmap)
+            cached.second.bitmap->Release();
+    g_recycledWindowIcons.clear();
 }
 
 static std::wstring BaseName(const std::wstring& path)
@@ -1961,20 +2034,26 @@ static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM)
     bool onCurrentDesktop = true;
     if (g_vdm)
     {
-        GUID id = {};
-        if (SUCCEEDED(g_vdm->GetWindowDesktopId(hwnd, &id)))
-        {
-            desktopId = id;
-            desktopIndex = DesktopIndexForId(id);
-        }
         // The documented check is authoritative for "visible here", including
         // windows pinned to every desktop, where the id may name only one of
         // them.
         onCurrentDesktop = IsWindowOnCurrentDesktop(hwnd);
+        // The common current-desktop view only needs the authoritative boolean
+        // above. Resolving every desktop GUID is a second shell COM round trip
+        // per window, and its index is only drawn/used by all-desktop search.
+        if (g_searchAllDesktops)
+        {
+            GUID id = {};
+            if (SUCCEEDED(g_vdm->GetWindowDesktopId(hwnd, &id)))
+            {
+                desktopId = id;
+                desktopIndex = DesktopIndexForId(id);
+            }
+        }
     }
     // A window visible here but tagged with another desktop is pinned to all
     // desktops; it has no single desktop label.
-    if (onCurrentDesktop && desktopIndex >= 0 &&
+    if (g_searchAllDesktops && onCurrentDesktop && desktopIndex >= 0 &&
         desktopIndex != g_currentDesktop)
         desktopIndex = -1;
 
@@ -2008,6 +2087,7 @@ static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM)
     entry.desktopId = desktopId;
     entry.desktopIndex = desktopIndex;
     entry.onCurrentDesktop = onCurrentDesktop;
+    RestoreWindowIcon(entry);
     g_windows.push_back(std::move(entry));
     return TRUE;
 }
@@ -2284,9 +2364,13 @@ static void RebuildFilter()
 
 static void RebuildWindowList()
 {
+    StashWindowIcons();
     ReleaseIcons();
     g_windows.clear();
     EnumWindows(EnumWindowsProc, 0);
+    // Release icons for windows that disappeared or fell outside the current
+    // search scope; entries restored above keep their cached D2D bitmap.
+    ReleaseStashedWindowIcons();
     g_previewWindows.clear();
     if (g_tabStyle == TabStyle::Preview)
     {
@@ -3391,15 +3475,34 @@ static void RebuildPills()
     const float createH = previews ? pm.thumbH
                           : cards ? createW * 1.4f : 42.0f * s * dsize;
 
-    float nameWidths[64] = {};
-    float maxWidth = 0.0f;
     const int count = std::min<int>(static_cast<int>(g_desktops.size()),
-                                    ARRAYSIZE(nameWidths));
+                                    ARRAYSIZE(g_pillNameWidths));
+
+    uint64_t measureKey = 1469598103934665603ull;
+    auto addMeasure = [&](uint64_t value) {
+        measureKey ^= value;
+        measureKey *= 1099511628211ull;
+    };
+    addMeasure(g_layoutSettingsGeneration);
+    addMeasure(static_cast<uint64_t>(g_currentDesktop + 1));
+    addMeasure(static_cast<uint64_t>(g_renameDesktop + 1));
+    for (int i = 0; i < count; ++i)
+    {
+        const std::wstring& name =
+            g_renameDesktop == i ? g_renameText : g_desktops[i].name;
+        for (WCHAR ch : name)
+            addMeasure(static_cast<uint64_t>(ch));
+        addMeasure(0xFFu);
+    }
 
     // Cards and previews use a fixed shape, so only pills and chips measure
-    // their labels.
-    if (!cards && !previews)
+    // their labels. Carousel frames move the same labels every 16 ms, so cache
+    // these DirectWrite measurements independently from their changing pose.
+    if (!cards && !previews && measureKey != g_pillMeasureKey)
     {
+        std::fill(g_pillNameWidths, g_pillNameWidths + ARRAYSIZE(g_pillNameWidths),
+                  0.0f);
+        g_pillMaxNameWidth = 0.0f;
         for (int i = 0; i < count; i++)
         {
             const bool renaming = g_renameDesktop == i;
@@ -3412,7 +3515,7 @@ static void RebuildPills()
                 float w = std::max(chipD + 16.0f * s, textW + 14.0f * s);
                 if (renaming)
                     w = std::max(w, 220.0f * s);
-                nameWidths[i] = std::min(260.0f * s, w);
+                g_pillNameWidths[i] = std::min(260.0f * s, w);
             }
             else
             {
@@ -3424,11 +3527,15 @@ static void RebuildPills()
                     w += 18.0f * s;
                 const float maxW = renaming ? 460.0f * s : 320.0f * s;
                 w = std::max(112.0f * s * dsize, std::min(maxW, w));
-                nameWidths[i] = w;
+                g_pillNameWidths[i] = w;
             }
-            maxWidth = std::max(maxWidth, nameWidths[i]);
+            g_pillMaxNameWidth = std::max(g_pillMaxNameWidth, g_pillNameWidths[i]);
         }
+        g_pillMeasureKey = measureKey;
     }
+
+    const float* nameWidths = g_pillNameWidths;
+    const float maxWidth = g_pillMaxNameWidth;
 
     if (count <= 0)
     {
@@ -3821,8 +3928,82 @@ static void RebuildDisplayList()
     }
 }
 
+static void AddLayoutKey(uint64_t& key, uint64_t value)
+{
+    // FNV-1a is plenty here: this is an in-process cache guard, not an
+    // identity or security hash.
+    key ^= value;
+    key *= 1099511628211ull;
+}
+
+static void AddLayoutKey(uint64_t& key, const std::wstring& value)
+{
+    for (WCHAR ch : value)
+        AddLayoutKey(key, static_cast<uint64_t>(ch));
+    AddLayoutKey(key, 0xFFFFu);
+}
+
+// State that can change the geometry or hit testing of the static scene. The
+// carousel position is deliberately excluded: it only needs RebuildPills(),
+// not a full grid/layout rebuild.
+static uint64_t LayoutBuildSignature()
+{
+    uint64_t key = 1469598103934665603ull;
+    AddLayoutKey(key, g_layoutSettingsGeneration);
+    AddLayoutKey(key, static_cast<uint64_t>(g_monitorW));
+    AddLayoutKey(key, static_cast<uint64_t>(g_monitorH));
+    AddLayoutKey(key, static_cast<uint64_t>(g_dpi));
+    AddLayoutKey(key, static_cast<uint64_t>(g_page + 1));
+    AddLayoutKey(key, static_cast<uint64_t>(g_currentDesktop + 1));
+    AddLayoutKey(key, static_cast<uint64_t>(g_desktopSelected + 1));
+    AddLayoutKey(key, static_cast<uint64_t>(g_focusStrip));
+    AddLayoutKey(key, static_cast<uint64_t>(g_focusDock));
+    AddLayoutKey(key, static_cast<uint64_t>(g_dockSelected + 1));
+    AddLayoutKey(key, static_cast<uint64_t>(SearchVisible()));
+    AddLayoutKey(key, static_cast<uint64_t>(g_renameDesktop + 1));
+    if (g_renameDesktop >= 0)
+        AddLayoutKey(key, g_renameText);
+
+    // Hover and selection only affect geometry when their lift effects are on.
+    AddLayoutKey(key, static_cast<uint64_t>(
+                          g_liftHoveredWindows ? g_hoverCard + 1 : 0));
+    AddLayoutKey(key, static_cast<uint64_t>(
+                          g_liftHoveredWindows ? g_hoverDock + 1 : 0));
+    AddLayoutKey(key, static_cast<uint64_t>(
+                          g_liftSelectedWindow ? g_selected + 1 : 0));
+    AddLayoutKey(key, static_cast<uint64_t>(
+                          g_liftSelectedWindow && g_pointerWindowSelection));
+
+    AddLayoutKey(key, static_cast<uint64_t>(g_desktops.size()));
+    for (const DesktopInfo& desktop : g_desktops)
+        AddLayoutKey(key, desktop.name);
+
+    AddLayoutKey(key, static_cast<uint64_t>(g_filtered.size()));
+    for (int entry : g_filtered)
+    {
+        AddLayoutKey(key, static_cast<uint64_t>(entry + 1));
+        if (entry >= 0 && entry < static_cast<int>(g_windows.size()))
+            AddLayoutKey(key, reinterpret_cast<uintptr_t>(g_windows[entry].hwnd));
+    }
+
+    AddLayoutKey(key, static_cast<uint64_t>(g_held.size()));
+    for (const HeldTask& task : g_held)
+        AddLayoutKey(key, reinterpret_cast<uintptr_t>(task.hwnd));
+    return key;
+}
+
 static void UpdateLayout()
 {
+    const uint64_t buildKey = LayoutBuildSignature();
+    if (buildKey == g_layoutBuildKey)
+    {
+        // Wheel animation changes only desktop-tab poses. Keep the window grid,
+        // dock and DirectWrite measurements intact while it advances.
+        if (IsWheel())
+            RebuildPills();
+        return;
+    }
+
     const float s = g_scale;
     g_layout.w = static_cast<float>(g_monitorW);
     g_layout.h = static_cast<float>(g_monitorH);
@@ -4117,6 +4298,7 @@ static void UpdateLayout()
         g_dockSelected = std::max(
             0, std::min(g_dockSelected, static_cast<int>(g_dockCards.size()) - 1));
     }
+    g_layoutBuildKey = buildKey;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4129,6 +4311,8 @@ static void ReleaseThumbnailSet(ThumbnailSet& set)
             DwmUnregisterThumbnail(thumbnail);
     set.handles.clear();
     set.sources.clear();
+    set.rects.clear();
+    set.opacity = 0;
 }
 
 static void ReleaseThumbnails()
@@ -4174,6 +4358,27 @@ static void SyncThumbnailSet(HWND destination, ThumbnailSet& set,
 
     const BYTE alpha =
         static_cast<BYTE>(std::max(0.0f, std::min(1.0f, opacity)) * 255.0f);
+    bool presentationUnchanged = alpha == set.opacity &&
+                               rects.size() == set.rects.size();
+    if (presentationUnchanged)
+    {
+        for (size_t i = 0; i < rects.size(); ++i)
+        {
+            const RectF& a = rects[i];
+            const RectF& b = set.rects[i];
+            if (std::fabs(a.l - b.l) > 0.01f || std::fabs(a.t - b.t) > 0.01f ||
+                std::fabs(a.r - b.r) > 0.01f || std::fabs(a.b - b.b) > 0.01f)
+            {
+                presentationUnchanged = false;
+                break;
+            }
+        }
+    }
+    if (presentationUnchanged)
+        return;
+
+    set.rects = rects;
+    set.opacity = alpha;
     const size_t count = std::min(set.handles.size(), rects.size());
     for (size_t i = 0; i < count; i++)
     {
@@ -10073,6 +10278,15 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT message, WPARAM wParam,
 
     case WM_MOUSEMOVE:
     {
+        // Pointer messages can arrive much faster than the display refreshes.
+        // Only the newest position has any effect on hover/drag state, so drop
+        // stale samples before doing layout work or requesting another paint.
+        MSG newer = {};
+        while (PeekMessageW(&newer, hwnd, WM_MOUSEMOVE, WM_MOUSEMOVE, PM_REMOVE))
+        {
+            wParam = newer.wParam;
+            lParam = newer.lParam;
+        }
         if (!g_trackingMouse)
         {
             TRACKMOUSEEVENT track = {sizeof(track)};
@@ -10922,6 +11136,7 @@ static void ShutdownUi()
     g_vdInternalResolved = false;
 
     g_windows.clear();
+    g_processPathCache.clear();
     g_filtered.clear();
     g_desktops.clear();
     g_held.clear();
