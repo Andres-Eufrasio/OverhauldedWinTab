@@ -99,15 +99,15 @@ static void Label(const wchar_t* text, const RectF& rect, float size,
     format->Release();
 }
 
-static void Sample(bool saiki, float x, float y, float scale,
-                    bool tucked = false, bool face = false, bool rotated = false)
+static void Sample(const std::wstring& theme, float x, float y, float scale,
+                     bool tucked = false, bool face = false, bool rotated = false)
 {
     const float w = 160.0f * scale;
     const float h = 224.0f * scale;
     const RectF card = {x, y, x + w, y + h};
     g_scale = rotated ? 1.5f : 1.0f;
     g_tuckCards = tucked;
-    g_cardTheme = saiki ? L"saiki-k" : L"yugioh";
+    g_cardTheme = theme;
     CardFonts(g_scale);
     D2D1::Matrix3x2F saved;
     g_d2dTarget->GetTransform(&saved);
@@ -142,7 +142,7 @@ int wmain(int argc, wchar_t** argv)
     Check(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
         IID_IWICImagingFactory, reinterpret_cast<void**>(&wic)));
     IWICBitmap* bitmap = nullptr;
-    Check(wic->CreateBitmap(1480, 940, GUID_WICPixelFormat32bppPBGRA,
+    Check(wic->CreateBitmap(1480, 1340, GUID_WICPixelFormat32bppPBGRA,
         WICBitmapCacheOnLoad, &bitmap));
     Check(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &g_d2dFactory));
     const auto properties = D2D1::RenderTargetProperties(
@@ -164,20 +164,30 @@ int wmain(int argc, wchar_t** argv)
     const float xs[] = {30, 210, 420, 655, 885, 1120};
     for (int col = 0; col < 6; ++col)
         Label(headings[col], {xs[col], 98, xs[col] + 300, 120}, 12);
-    Label(L"SAIKI K. / OFFICIAL TITLE OUTLINES", {30, 126, 1000, 153}, 16);
-    for (bool saiki : {true, false})
+    struct PreviewTheme
     {
-        const float y = saiki ? 163.0f : 560.0f;
-        Sample(saiki, xs[0], y, .82f);
-        Sample(saiki, xs[1], y, 1.0f);
-        Sample(saiki, xs[2], y, 1.22f);
-        Sample(saiki, xs[3], y, 1.18f, true);
-        Label(L"TUCKED DESKTOP", {xs[3], y + 158, xs[3] + 220, y + 180}, 12);
-        Sample(saiki, xs[3], y + 185, 1.18f, true, true);
-        Sample(saiki, xs[4], y, 1.0f, false, true);
-        Sample(saiki, xs[5], y, 1.5f, false, false, true);
+        const wchar_t* heading;
+        const wchar_t* name;
+        float y;
+    };
+    const PreviewTheme themes[] = {
+        {L"SAIKI K. / OFFICIAL TITLE OUTLINES", L"saiki-k", 163.0f},
+        {L"YU-GI-OH! / ORIGINAL VORTEX CARD BACK", L"yugioh", 560.0f},
+        {L"KAKEGURUI / ROULETTE-CHIP CARD BACK", L"kakegurui", 957.0f},
+    };
+    for (const PreviewTheme& theme : themes)
+    {
+        Label(theme.heading, {30, theme.y - 37, 1000, theme.y - 10}, 16);
+        Sample(theme.name, xs[0], theme.y, .82f);
+        Sample(theme.name, xs[1], theme.y, 1.0f);
+        Sample(theme.name, xs[2], theme.y, 1.22f);
+        Sample(theme.name, xs[3], theme.y, 1.18f, true);
+        Label(L"TUCKED DESKTOP", {xs[3], theme.y + 158, xs[3] + 220,
+                                    theme.y + 180}, 12);
+        Sample(theme.name, xs[3], theme.y + 185, 1.18f, true, true);
+        Sample(theme.name, xs[4], theme.y, 1.0f, false, true);
+        Sample(theme.name, xs[5], theme.y, 1.5f, false, false, true);
     }
-    Label(L"YU-GI-OH! / ORIGINAL VORTEX CARD BACK", {30, 523, 1000, 550}, 16);
     Check(g_d2dTarget->EndDraw());
     for (auto* path : g_vectorCardArt)
         if (!path)
@@ -192,7 +202,7 @@ int wmain(int argc, wchar_t** argv)
     IWICBitmapFrameEncode* frame = nullptr;
     Check(encoder->CreateNewFrame(&frame, nullptr));
     Check(frame->Initialize(nullptr));
-    Check(frame->SetSize(1480, 940));
+    Check(frame->SetSize(1480, 1340));
     auto pixelFormat = GUID_WICPixelFormat32bppBGRA;
     Check(frame->SetPixelFormat(&pixelFormat));
     Check(frame->WriteSource(bitmap, nullptr));

@@ -2,7 +2,7 @@
 // @id              overhaulded-win-tab
 // @name            OverhauldedWinTab
 // @description     Replaces the Windows 11 Task View (Win+Tab) with a modern, focused overview of your windows and virtual desktops.
-// @version         0.9.4
+// @version         0.9.5
 // @author          Andres Eufrasio
 // @github          https://github.com/Andres-Eufrasio
 // @homepage        https://github.com/Andres-Eufrasio/OverhauldedWinTab
@@ -6161,6 +6161,117 @@ static void DrawDesktopCard(const PillView& pill, bool active, bool hovered,
         g_d2dTarget->SetTransform(savedTransform);
 }
 
+// A bespoke casino-table back for the Kakegurui theme. It keeps the wheel near
+// the upper third so the mark still reads when cards are tucked below the strip.
+static void DrawKakeguruiCardBack(const RectF& card, float alpha, bool hovered)
+{
+    const float s = g_scale;
+    const float radius = 12.0f * s;
+    const UINT32 black = 0xFF100D10;
+    const UINT32 ink = 0xFF050304;
+    const UINT32 crimson = 0xFF8E1B2A;
+    const UINT32 red = 0xFFC33A4A;
+    const UINT32 gold = 0xFFD4AF37;
+    const UINT32 ivory = 0xFFF6E9C6;
+
+    FillRound(card, radius, black, alpha);
+    const RectF outer = {card.l + 3.0f * s, card.t + 3.0f * s,
+                         card.r - 3.0f * s, card.b - 3.0f * s};
+    FillRound(outer, std::max(5.0f * s, radius - 2.0f * s), crimson,
+              0.92f * alpha);
+    StrokeRound(card, radius, gold, 1.8f * s, 0.95f * alpha);
+    StrokeRound(outer, std::max(5.0f * s, radius - 2.0f * s),
+                0xFF5A0F1B, 1.2f * s, alpha);
+
+    const RectF frame = {card.l + 8.0f * s, card.t + 8.0f * s,
+                         card.r - 8.0f * s, card.b - 8.0f * s};
+    FillRound(frame, std::max(4.0f * s, radius - 5.0f * s), ink, alpha);
+    StrokeRound(frame, std::max(4.0f * s, radius - 5.0f * s), gold,
+                1.0f * s, 0.82f * alpha);
+    const RectF field = {card.l + 13.0f * s, card.t + 13.0f * s,
+                         card.r - 13.0f * s, card.b - 13.0f * s};
+    FillRound(field, std::max(3.0f * s, radius - 7.0f * s), 0xFF1A1117,
+              alpha);
+
+    g_d2dTarget->PushAxisAlignedClip(
+        D2D1::RectF(field.l, field.t, field.r, field.b),
+        D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+    // A restrained diamond cloth makes the empty parts feel like a real card
+    // back rather than a flat black panel.
+    const float lattice = std::max(10.0f * s, 11.0f);
+    g_d2dBrush->SetColor(ColorOf(crimson, 0.26f * alpha));
+    for (float x = field.l - field.H(); x < field.r; x += lattice)
+    {
+        g_d2dTarget->DrawLine(D2D1::Point2F(x, field.b),
+                              D2D1::Point2F(x + field.H(), field.t),
+                              g_d2dBrush, 0.65f * s);
+        g_d2dTarget->DrawLine(D2D1::Point2F(x, field.t),
+                              D2D1::Point2F(x + field.H(), field.b),
+                              g_d2dBrush, 0.65f * s);
+    }
+
+    const float cx = (field.l + field.r) / 2.0f;
+    const float cy = g_tuckCards ? field.t + field.H() * 0.31f
+                                 : field.t + field.H() * 0.48f;
+    const float wheelR = std::min(field.W(), field.H()) * 0.32f;
+    FillEllipse(cx, cy, wheelR * 1.16f, wheelR * 1.16f, 0xFF060405,
+                0.98f * alpha);
+    StrokeEllipse(cx, cy, wheelR * 1.16f, wheelR * 1.16f, gold,
+                  1.4f * s, 0.78f * alpha);
+    FillEllipse(cx, cy, wheelR, wheelR, crimson, alpha);
+    StrokeEllipse(cx, cy, wheelR, wheelR, gold, 1.0f * s, 0.90f * alpha);
+
+    // Alternating red and black pockets plus fine spokes suggest a roulette
+    // wheel without relying on tiny, illegible numbers.
+    g_d2dBrush->SetColor(ColorOf(gold, 0.50f * alpha));
+    for (int i = 0; i < 16; ++i)
+    {
+        const float angle = static_cast<float>(i) * 6.2831853f / 16.0f;
+        const float c = std::cos(angle);
+        const float sn = std::sin(angle);
+        g_d2dTarget->DrawLine(
+            D2D1::Point2F(cx + c * wheelR * 0.43f,
+                          cy + sn * wheelR * 0.43f),
+            D2D1::Point2F(cx + c * wheelR * 0.94f,
+                          cy + sn * wheelR * 0.94f),
+            g_d2dBrush, 0.65f * s);
+        const UINT32 pocket = (i & 1) ? 0xFF151014 : 0xFFB72B3A;
+        FillEllipse(cx + c * wheelR * 0.72f, cy + sn * wheelR * 0.72f,
+                    std::max(1.5f * s, wheelR * 0.095f),
+                    std::max(1.5f * s, wheelR * 0.095f), pocket, alpha);
+    }
+    StrokeEllipse(cx, cy, wheelR * 0.48f, wheelR * 0.48f, gold,
+                  1.0f * s, 0.90f * alpha);
+    FillEllipse(cx, cy, wheelR * 0.39f, wheelR * 0.39f, ink, alpha);
+
+    // The four cardinal diamonds echo the card suits and give the center a
+    // sharp, high-stakes emblem at every supported card size.
+    D2D1::Matrix3x2F saved;
+    g_d2dTarget->GetTransform(&saved);
+    const float diamond = std::max(2.5f * s, wheelR * 0.11f);
+    for (int i = 0; i < 4; ++i)
+    {
+        const float angle = static_cast<float>(i) * 1.5707963f;
+        const float x = cx + std::cos(angle) * wheelR * 0.25f;
+        const float y = cy + std::sin(angle) * wheelR * 0.25f;
+        g_d2dTarget->SetTransform(
+            D2D1::Matrix3x2F::Rotation(45.0f, D2D1::Point2F(x, y)) * saved);
+        const D2D1_RECT_F shape = D2D1::RectF(x - diamond, y - diamond,
+                                               x + diamond, y + diamond);
+        g_d2dBrush->SetColor(ColorOf(i & 1 ? red : gold, 0.92f * alpha));
+        g_d2dTarget->FillRectangle(&shape, g_d2dBrush);
+    }
+    g_d2dTarget->SetTransform(saved);
+    FillEllipse(cx, cy, wheelR * 0.105f, wheelR * 0.105f, ivory, alpha);
+    StrokeEllipse(cx, cy, wheelR * 0.105f, wheelR * 0.105f, gold,
+                  0.8f * s, alpha);
+
+    g_d2dTarget->PopAxisAlignedClip();
+    if (hovered)
+        StrokeRound(card, radius, ivory, 1.1f * s, 0.58f * alpha);
+}
+
 // A face-down playing card used as the create-desktop button. Clicking it or
 // pulling it downward creates a new desktop.
 static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
@@ -6208,8 +6319,14 @@ static void DrawCreateCard(const RectF& rect, bool hovered, float pull)
     if (customBack)
     {
         const RectF image = {card.l + 2.0f * s, card.t + 2.0f * s,
-                             card.r - 2.0f * s, card.b - 2.0f * s};
+                              card.r - 2.0f * s, card.b - 2.0f * s};
         DrawBitmapCover(customBack, image, 1.0f);
+    }
+
+    if (!customBack && g_cardTheme == L"kakegurui")
+    {
+        DrawKakeguruiCardBack(card, 1.0f, hovered);
+        return;
     }
 
     // Complete printed designs bypass the generic accent-tinted gold frame.
